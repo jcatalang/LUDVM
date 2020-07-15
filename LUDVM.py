@@ -220,14 +220,16 @@ class LUDVM():
 
     def motion_sinusoidal(self, alpha_m = 0, alpha_max = 10, h_max = 1, \
                           k = 0.2*np.pi, phi = 90, h0=0, x0=0.25):
-        # Definition of motion kinematics:
-        # Heaving:  h(t)     = h_max*cos(2*pi*f*t)
+        # Definition of motion kinematics (Pitching and Heaving):
+        # Heaving:  h(t)     = h0 + h_max*cos(2*pi*f*t)
         # Pitching: alpha(t) = alpham + alpha_max*cos(2*pi*f*t + phi)
-        # Inputs: alpham (mean pitch in degrees), alpha_max (pitch amplitude in degrees)
-        # h_max (heaving amplitude),
-        # k (reduced frequency: ratio between convective time and period)
-        # phi (phase lag between heaving and pitching in degrees)
-        # x0, h0: initial position of the pivot point
+        # x-motion: x(t)     = x0 - Uinf*t
+        # Inputs: alpha_m (mean pitch in degrees)
+        #         alpha_max (pitch amplitude in degrees)
+        #         h_max (heaving amplitude)
+        #         k (reduced frequency: ratio between convective time and period)
+        #         phi (phase lag between heaving and pitching in degrees)
+        #         x0, h0: initial position of the pivot point
 
         pi    = np.pi
         Uinf  = self.Uinf
@@ -284,10 +286,21 @@ class LUDVM():
         return None
 
     def motion_plunge(self, G = 1, T = 2, alpha_m = 0, h0=0, x0=0.25):
-        # FUNCTION THAT COMPUTES THE KINEMATICS OF THE PLUNGE MANEUVER
-        # G = Vmax/Uinf (velocity ratio)
-        # T = 2*chord/U_inf  (duration of maneuver)
-        # alpha_m is the angle of attack for the simulation
+        # Definition of motion kinematics (Plunge maneuver):
+        # The plunge maneuver is determined by the following expression:
+        # V(t) = -Vmax*sin(pi*t/T)**2. Where V=Vmax when t=T/2, in the middle
+        # of the maneuver. Vmax is the peak plunge velocity.
+        # Integrating V(t), h(t) is obtained (see expression below):
+        # Plunging: h(t)     = h0 - Vmax*t/2 + Vmax*T/(4*pi)*sin(2*pi*ti/T)
+        # Pitching: alpha(t) = alpha_m (constant)
+        # x-motion: x(t)     = x0 - Uinf*t
+        # Inputs: alpha_m (mean pitch in degrees)
+        #         G = Vmax/Uinf (velocity ratio)
+        #         T = 2*chord/U_inf  (duration of maneuver)
+        #         x0, h0: initial position of the pivot point
+        # If the time of simulation is higher than maneuver duration T,
+        # the airfoil continues with a straight path.
+
 
         pi    = np.pi
         Uinf  = self.Uinf
