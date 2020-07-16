@@ -42,6 +42,9 @@ class LUDVM():
     #       Motion sinusoidal added
     #       Airfoil circulation re-defined
     #       Other minor changes
+    # \date 16-07-2020 by J.M. Catalan \n
+    #       Solving method proposed by Faure et. al. added
+    #       Difference wrt. Ramesh: no need for iterating
     # ------------------------------------------------------------------------
     # \details
     #    Publication providing details on the LDVM theory is:
@@ -60,6 +63,12 @@ class LUDVM():
     #    Theor. Comput. Fluid Dyn., January 2013, DOI
     #    10.1007/s00162-012-0292-8.  Available from:
     #    http://www.mae.ncsu.edu/apa/publications.html#j021
+    # ........................................................................
+    #    Publication containing the details of the modified model:
+    #    A modified discrete-vortex method algorithm with shedding criterion
+    #    for aerodynamic coefficients prediction at high angle of attack
+    #    Thierry M. Faure, Laurent Dumas, Vincent Drouet, Olivier Montagnier.
+    #    Applied Mathematical Modelling, December 2018.
     # ........................................................................
     #    More details in Katz J. & Plotkin A. Low Speed Aerodynamics
     #    Chapter 13, Section 13.8 -> Unsteady Motion of a Two-Dimensional
@@ -88,7 +97,7 @@ class LUDVM():
                        Npoints=80, Ncoeffs=30, LESPcrit=0.2, Naca = '0012', \
                        foil_filename = None, G = 1, T = 2, alpha_m = 0, \
                        alpha_max = 10, k = 0.2*np.pi, phi = 90, h_max = 1, \
-                       verbose = True):
+                       verbose = True, method = 'Faure'):
         self.t0 = t0               # Beggining of simulation
         self.tf = tf               # End of simulation
         self.dt = dt               # Time step
@@ -100,10 +109,11 @@ class LUDVM():
         self.Ncoeffs  = Ncoeffs    # Number of coefficients in the Fourier expansion
         self.piv      = 0.25*chord # Pivot point for the pitching motion
         self.LESPcrit = LESPcrit   # Critical Leading Edge Suction Parameter (LESP)
-        self.maxerror = 1e-10      # Maximum error of the Newton Iteration Method
-        self.maxiter  = 50         # Maximum number of iterations in the Newton Iteration Method
-        self.epsilon  = 1e-4       # For the numerical derivative in Newton method
+        self.maxerror = 1e-10      # Maximum error of the Newton Iteration Method (only for Ramesh method)
+        self.maxiter  = 50         # Maximum number of iterations in the Newton Iteration Method (only for Ramesh method)
+        self.epsilon  = 1e-4       # For the numerical derivative in Newton method (only for Ramesh method)
         self.xgamma   = 0.5        # Gamma point location as % of panel, where the bound vortices are located
+        self.method   = method     # Method for computing the Circulations: 'Ramesh' or 'Faure'
 
         self.t = np.arange(t0,tf+dt,dt)      # Time vector
         self.nt = len(self.t)                # Number of time steps
@@ -461,7 +471,7 @@ class LUDVM():
             self.path['LEV'][i,:,:ilev]  = self.path['LEV'][i-1,:,:ilev]
 
             '''--------------------------------------------------------------'''
-            '''----------------------- TEV iteration ------------------------'''
+            '''---------------------- TEV computation -----------------------'''
             '''--------------------------------------------------------------'''
             # Compute the position of the shed TEV
             if itev == 0:
@@ -475,71 +485,107 @@ class LUDVM():
                 self.path['TEV'][i,:,itev] = self.path['airfoil'][i,:,-1] + \
                    1/3*(self.path['TEV'][i,:,itev-1] - self.path['airfoil'][i,:,-1])
 
-            f = 1 #initializing
-            niter = 1
-            shed_vortex_gamma = -1 # guess for Newton-Raphson
-            while abs(f) > self.maxerror and niter < self.maxiter:
-                self.circulation['TEV'][itev] = shed_vortex_gamma
-                circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-                W = self.airfoil_downwash(circulation, xw, zw, i)
-                # Compute A0, A1 coefficients
-                A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-                A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-                # Get f for Newton-Raphson
-                circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                f = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+            if self.method == 'Ramesh': # iterating with Newton method
+               f = 1 #initializing
+               niter = 1
+               shed_vortex_gamma = -1 # guess for Newton-Raphson
+               while abs(f) > self.maxerror and niter < self.maxiter:
+                   self.circulation['TEV'][itev] = shed_vortex_gamma
+                   circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+                   xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+                   zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                   W = self.airfoil_downwash(circulation, xw, zw, i)
+                   # Compute A0, A1 coefficients
+                   A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+                   A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+                   # Get f for Newton-Raphson
+                   circulation_bound = Uinf*chord*pi*(A0 + A1/2)
+                   f = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
 
-                # We set now gamma_TEV = gamma_TEV + epsilon
-                self.circulation['TEV'][itev] = shed_vortex_gamma + epsilon
-                # Get f + delta for Newton-Raphson: we need to compute again W, A0, A1
-                circulation   = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                # print(circulation)
-                xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-                W  = self.airfoil_downwash(circulation, xw, zw, i)
-                A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-                A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-                circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                fdelta = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                   # We set now gamma_TEV = gamma_TEV + epsilon
+                   self.circulation['TEV'][itev] = shed_vortex_gamma + epsilon
+                   # Get f + delta for Newton-Raphson: we need to compute again W, A0, A1
+                   circulation   = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+                   # print(circulation)
+                   xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+                   zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                   W  = self.airfoil_downwash(circulation, xw, zw, i)
+                   A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+                   A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+                   circulation_bound = Uinf*chord*pi*(A0 + A1/2)
+                   fdelta = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
 
-                # Newton-Raphson:
-                fprime = (fdelta - f) / epsilon # numerical df/dGamma
-                shed_vortex_gamma = shed_vortex_gamma - f / fprime # update solution with Newton
+                   # Newton-Raphson:
+                   fprime = (fdelta - f) / epsilon # numerical df/dGamma
+                   shed_vortex_gamma = shed_vortex_gamma - f / fprime # update solution with Newton
 
-                self.circulation['TEV'][itev] = shed_vortex_gamma # Restoring TEV circulation
+                   self.circulation['TEV'][itev] = shed_vortex_gamma # Restoring TEV circulation
 
-                if niter >= self.maxiter:
-                    print('The solution did not converge during the Newton-Raphson iteration')
-                    # break
+                   if niter >= self.maxiter:
+                       print('The solution did not converge during the Newton-Raphson iteration')
+                       # break
 
-                niter = niter + 1
+                   niter = niter + 1
 
-            # Solution after convergenge:
-            circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-            xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-            zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-            W  = self.airfoil_downwash(circulation, xw, zw, i)
-            A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-            A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-            self.fourier[i,0,:2] = A0, A1
-            self.circulation['bound'][itev] = Uinf*chord*pi*(A0 + A1/2)
-            # Now we compute the rest of fourier coefficients (from A2 to An)
-            for n in range(2,self.Ncoeffs):
-                self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
-            for n in range(self.Ncoeffs): # and their derivatives
-                self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
+               # Solution after convergenge:
+               circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+               xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+               zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+               W  = self.airfoil_downwash(circulation, xw, zw, i)
+               A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+               A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+               self.fourier[i,0,:2] = A0, A1
+               self.circulation['bound'][itev] = Uinf*chord*pi*(A0 + A1/2)
+               # Now we compute the rest of fourier coefficients (from A2 to An)
+               for n in range(2,self.Ncoeffs):
+                   self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
+               for n in range(self.Ncoeffs): # and their derivatives
+                   self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
 
-            self.LESP_prev[itev] = A0 # LESP before being modulated (if it is the case)
+            elif self.method == 'Faure': # without iterating
+                # Contribution of existing vortices
+                circulation = np.append(self.circulation['TEV'][:itev], self.circulation['LEV'][:ilev])
+                xw = np.append(self.path['TEV'][i,0,:itev], self.path['LEV'][i,0,:ilev])
+                zw = np.append(self.path['TEV'][i,1,:itev], self.path['LEV'][i,1,:ilev])
+                T1  = self.airfoil_downwash(circulation, xw, zw, i)
+
+                # We compute the intensity of the shed TEV
+                xa, za = self.path['airfoil_gamma_points'][i,0,:], self.path['airfoil_gamma_points'][i,1,:]
+                xtevi, ztevi = self.path['TEV'][i,0,itev], self.path['TEV'][i,1,itev]
+                utevi, wtevi = self.induced_velocity(np.array([1]), np.array([xtevi]), np.array([ztevi]), xa, za)
+                ut = utevi*np.cos(self.alpha[i]) - wtevi*np.sin(self.alpha[i])  # tangential to chord
+                un = utevi*np.sin(self.alpha[i]) + wtevi*np.cos(self.alpha[i])  # normal to chord
+                T2 = self.airfoil['detadx_panel']*ut - un
+
+                I1 = np.trapz(T1*(np.cos(theta_panel)-1), theta_panel)
+                I2 = np.trapz(T2*(np.cos(theta_panel)-1), theta_panel)
+                self.circulation['TEV'][itev] = - (I1 + sum(self.circulation['TEV'][:itev]) \
+                    + sum(self.circulation['LEV'][:ilev]))/(1+I2)
+
+                self.circulation['bound'][itev] = I1 + self.circulation['TEV'][itev]*I2
+
+                kelvin =  self.circulation['bound'][itev] + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+
+                J1 = - 1/np.pi*np.trapz(T1, theta_panel)
+                J2 = - 1/np.pi*np.trapz(T2, theta_panel)
+
+                W  = T1 + self.circulation['TEV'][itev]*T2
+                # self.fourier[i,0,0] = J1 + self.circulation['TEV'][itev]*J2
+                self.fourier[i,0,0] = - 1/pi * np.trapz(W/Uinf, theta_panel)
+                for n in range(1,self.Ncoeffs):
+                   self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
+                for n in range(self.Ncoeffs): # and their derivatives
+                   self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
+
+            self.LESP_prev[itev] = self.fourier[i,0,0] # LESP before being modulated (if it is the case)
 
             '''--------------------------------------------------------------'''
-            '''----------------------- LEV iteration ------------------------'''
+            '''-------------------- TEV, LEV computation --------------------'''
             '''--------------------------------------------------------------'''
 
             if abs(self.fourier[i,0,0]) >= abs(LESPcrit): # if A0 exceeds the LESPcrit: shedding occurs
-                LEV_shed_gamma = shed_vortex_gamma # initial guess for Newton
-                TEV_shed_gamma = shed_vortex_gamma # initial guess for Newton
+                LEV_shed_gamma = self.circulation['TEV'][itev] # initial guess for Newton
+                TEV_shed_gamma = self.circulation['TEV'][itev] # initial guess for Newton
                 LEV_shed[i] = ilev    # indicator for knowing when shedding occurs
                 # LEV_shed will be 'ilev' when shedding occurs and '-1' otherwise
 
@@ -563,117 +609,168 @@ class LUDVM():
                 else:
                     LESPcrit =  abs(LESPcrit)
 
-                f1, f2 = 0.1, 0.1 #initializing for the while
-                niter = 1
-                # Newton method for nonlinear systems
-                while (abs(f1) > self.maxerror or abs(f2) > self.maxerror) and \
-                      niter < self.maxiter:
+                if self.method == 'Ramesh':
+                   f1, f2 = 0.1, 0.1 #initializing for the while
+                   niter = 1
+                   # Newton method for nonlinear systems
+                   while (abs(f1) > self.maxerror or abs(f2) > self.maxerror) and \
+                         niter < self.maxiter:
 
-                      self.circulation['TEV'][itev] = TEV_shed_gamma #initial guess
-                      self.circulation['LEV'][ilev] = LEV_shed_gamma #initial guess
+                         self.circulation['TEV'][itev] = TEV_shed_gamma #initial guess
+                         self.circulation['LEV'][ilev] = LEV_shed_gamma #initial guess
 
-                      circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                      xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                      zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-                      W = self.airfoil_downwash(circulation, xw, zw, i)
-                      # Compute A0, A1 coefficients
-                      A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-                      A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-                      # Get f1 for Newton method
-                      cbound = Uinf*chord*pi*(A0 + A1/2)
-                      f1 = cbound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
-                      # Get f2 for Newton method
-                      f2 = LESPcrit - A0
+                         circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+                         xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+                         zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                         W = self.airfoil_downwash(circulation, xw, zw, i)
+                         # Compute A0, A1 coefficients
+                         A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+                         A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+                         # Get f1 for Newton method
+                         cbound = Uinf*chord*pi*(A0 + A1/2)
+                         f1 = cbound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                         # Get f2 for Newton method
+                         f2 = LESPcrit - A0
 
-                      # Now we need to compute f1delta and f2delta
-                      self.circulation['TEV'][itev] = TEV_shed_gamma + epsilon #initial guess
-                      self.circulation['LEV'][ilev] = LEV_shed_gamma           #initial guess
-                      circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                      xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                      zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-                      W = self.airfoil_downwash(circulation, xw, zw, i)
-                      # Compute A0, A1 coefficients
-                      A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-                      A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-                      # Get f1 for Newton method
-                      circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                      f1_delta_TEV = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
-                      f2_delta_TEV = LESPcrit - A0
+                         # Now we need to compute f1delta and f2delta
+                         self.circulation['TEV'][itev] = TEV_shed_gamma + epsilon #initial guess
+                         self.circulation['LEV'][ilev] = LEV_shed_gamma           #initial guess
+                         circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+                         xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+                         zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                         W = self.airfoil_downwash(circulation, xw, zw, i)
+                         # Compute A0, A1 coefficients
+                         A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+                         A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+                         # Get f1 for Newton method
+                         circulation_bound = Uinf*chord*pi*(A0 + A1/2)
+                         f1_delta_TEV = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                         f2_delta_TEV = LESPcrit - A0
 
-                      self.circulation['TEV'][itev] = TEV_shed_gamma             #initial guess
-                      self.circulation['LEV'][ilev] = LEV_shed_gamma + epsilon   #initial guess
-                      circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                      xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                      zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-                      W = self.airfoil_downwash(circulation, xw, zw, i)
-                      # Compute A0, A1 coefficients
-                      A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-                      A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-                      # Get f1 for Newton method
-                      circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                      f1_delta_LEV = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
-                      f2_delta_LEV = LESPcrit - A0
+                         self.circulation['TEV'][itev] = TEV_shed_gamma             #initial guess
+                         self.circulation['LEV'][ilev] = LEV_shed_gamma + epsilon   #initial guess
+                         circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+                         xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+                         zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                         W = self.airfoil_downwash(circulation, xw, zw, i)
+                         # Compute A0, A1 coefficients
+                         A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+                         A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+                         # Get f1 for Newton method
+                         circulation_bound = Uinf*chord*pi*(A0 + A1/2)
+                         f1_delta_LEV = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                         f2_delta_LEV = LESPcrit - A0
 
-                      # Build the Jacobian
-                      # J = [J11 J12] = [df1/dGamma_LEV df1/dGamma_TEV]
-                      #     [J21 J22]   [df2/dGamma_LEV df2/dGamma_TEV]
-                      # J11 = df1/dGamma_LEV = (f1(Gamma_LEV+eps) - f1(Gamma_LEV))/(Gamma_LEV+eps - Gamma_LEV)
-                      # J12 = df1/dGamma_TEV = (f1(Gamma_TEV+eps) - f1(Gamma_TEV))/(Gamma_TEV+eps - Gamma_TEV)
-                      # J21 = df2/dGamma_LEV = (f2(Gamma_LEV+eps) - f2(Gamma_LEV))/(Gamma_LEV+eps - Gamma_LEV)
-                      # J22 = df2/dGamma_TEV = (f2(Gamma_TEV+eps) - f2(Gamma_TEV))/(Gamma_TEV+eps - Gamma_TEV)
-                      # Where all the denominators are equal to epsilon -> Gamma+eps-Gamma
-                      # Newton for nonlinear systems:
-                      # J*p_k = -f -> p_k = - J^-1 *f (solve a linear system at each iteration)
-                      # p_k is the direction of search in the Newton method for nonlinear systems
-                      # [Gamma_LEV, Gamma_TEV]_k+1 = [Gamma_LEV, Gamma_TEV]_k + pk
+                         # Build the Jacobian
+                         # J = [J11 J12] = [df1/dGamma_LEV df1/dGamma_TEV]
+                         #     [J21 J22]   [df2/dGamma_LEV df2/dGamma_TEV]
+                         # J11 = df1/dGamma_LEV = (f1(Gamma_LEV+eps) - f1(Gamma_LEV))/(Gamma_LEV+eps - Gamma_LEV)
+                         # J12 = df1/dGamma_TEV = (f1(Gamma_TEV+eps) - f1(Gamma_TEV))/(Gamma_TEV+eps - Gamma_TEV)
+                         # J21 = df2/dGamma_LEV = (f2(Gamma_LEV+eps) - f2(Gamma_LEV))/(Gamma_LEV+eps - Gamma_LEV)
+                         # J22 = df2/dGamma_TEV = (f2(Gamma_TEV+eps) - f2(Gamma_TEV))/(Gamma_TEV+eps - Gamma_TEV)
+                         # Where all the denominators are equal to epsilon -> Gamma+eps-Gamma
+                         # Newton for nonlinear systems:
+                         # J*p_k = -f -> p_k = - J^-1 *f (solve a linear system at each iteration)
+                         # p_k is the direction of search in the Newton method for nonlinear systems
+                         # [Gamma_LEV, Gamma_TEV]_k+1 = [Gamma_LEV, Gamma_TEV]_k + pk
 
-                      J11  = (f1_delta_LEV - f1) / epsilon
-                      J12  = (f1_delta_TEV - f1) / epsilon
-                      J21  = (f2_delta_LEV - f2) / epsilon
-                      J22  = (f2_delta_TEV - f2) / epsilon
-                      J    = np.array([[J11, J12], [J21, J22]])
+                         J11  = (f1_delta_LEV - f1) / epsilon
+                         J12  = (f1_delta_TEV - f1) / epsilon
+                         J21  = (f2_delta_LEV - f2) / epsilon
+                         J22  = (f2_delta_TEV - f2) / epsilon
+                         J    = np.array([[J11, J12], [J21, J22]])
 
-                      pk = - np.linalg.solve(J, np.array([f1,f2])) #direction of search
-                      shed_gamma = np.array([LEV_shed_gamma, TEV_shed_gamma]) + pk
+                         pk = - np.linalg.solve(J, np.array([f1,f2])) #direction of search
+                         shed_gamma = np.array([LEV_shed_gamma, TEV_shed_gamma]) + pk
 
-                      LEV_shed_gamma = shed_gamma[0]
-                      TEV_shed_gamma = shed_gamma[1]
+                         LEV_shed_gamma = shed_gamma[0]
+                         TEV_shed_gamma = shed_gamma[1]
 
-                      self.circulation['TEV'][itev]    = TEV_shed_gamma
-                      self.circulation['LEV'][ilev]    = LEV_shed_gamma
-                      self.circulation['bound'][itev]  = cbound
+                         self.circulation['TEV'][itev]    = TEV_shed_gamma
+                         self.circulation['LEV'][ilev]    = LEV_shed_gamma
+                         self.circulation['bound'][itev]  = cbound
 
-                      if niter >= self.maxiter:
-                          print('The solution did not converge when solving the LEV-TEV nonlinear system')
-                          # break
+                         if niter >= self.maxiter:
+                             print('The solution did not converge when solving the LEV-TEV nonlinear system')
+                             # break
 
 
-                      niter = niter + 1
+                         niter = niter + 1
 
-                # Solution after convergence:
-                circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
-                W = self.airfoil_downwash(circulation, xw, zw, i)
-                A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
-                A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
-                self.fourier[i,0,:2] = A0, A1
-                self.circulation['bound'][itev] = Uinf*chord*pi*(A0 + A1/2)
+                   # Solution after convergence:
+                   circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+                   xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
+                   zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                   W = self.airfoil_downwash(circulation, xw, zw, i)
+                   A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
+                   A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
+                   self.fourier[i,0,:2] = A0, A1
+                   self.circulation['bound'][itev] = Uinf*chord*pi*(A0 + A1/2)
 
-                # Now we compute the rest of fourier coefficients (from A2 to An)
-                for n in range(2,self.Ncoeffs):
-                    self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
+                   # Now we compute the rest of fourier coefficients (from A2 to An)
+                   for n in range(2,self.Ncoeffs):
+                       self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
 
-                # Not updating the derivatives since A0(t) is no longer differentiable
-                # Use the derivatives of the coefficients before the TEV
+                   # Not updating the derivatives since A0(t) is no longer differentiable
+                   # Use the derivatives of the coefficients before the TEV
+                   # for n in range(self.Ncoeffs): # and their derivatives
+                   #     self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
 
-                # for n in range(self.Ncoeffs): # and their derivatives
-                #     self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
+                elif self.method == 'Faure': # without iterating
+                    # Contribution of existing vortices
+                    circulation = np.append(self.circulation['TEV'][:itev], self.circulation['LEV'][:ilev])
+                    xw = np.append(self.path['TEV'][i,0,:itev], self.path['LEV'][i,0,:ilev])
+                    zw = np.append(self.path['TEV'][i,1,:itev], self.path['LEV'][i,1,:ilev])
+                    T1  = self.airfoil_downwash(circulation, xw, zw, i)
+
+                    # We compute the intensity of the shed TEV and LEV
+                    xa, za = self.path['airfoil_gamma_points'][i,0,:], self.path['airfoil_gamma_points'][i,1,:]
+                    xtevi, ztevi = self.path['TEV'][i,0,itev], self.path['TEV'][i,1,itev]
+                    utevi, wtevi = self.induced_velocity(np.array([1]), np.array([xtevi]), np.array([ztevi]), xa, za)
+                    ut_tevi = utevi*np.cos(self.alpha[i]) - wtevi*np.sin(self.alpha[i])  # tangential to chord
+                    un_tevi = utevi*np.sin(self.alpha[i]) + wtevi*np.cos(self.alpha[i])  # normal to chord
+                    T2 = self.airfoil['detadx_panel']*ut_tevi - un_tevi
+                    xlevi, zlevi = self.path['LEV'][i,0,ilev], self.path['LEV'][i,1,ilev]
+                    ulevi, wlevi = self.induced_velocity(np.array([1]), np.array([xlevi]), np.array([zlevi]), xa, za)
+                    ut_levi = ulevi*np.cos(self.alpha[i]) - wlevi*np.sin(self.alpha[i])  # tangential to chord
+                    un_levi = ulevi*np.sin(self.alpha[i]) + wlevi*np.cos(self.alpha[i])  # normal to chord
+                    T3 = self.airfoil['detadx_panel']*ut_levi - un_levi
+
+                    I1 = np.trapz(T1*(np.cos(theta_panel)-1), theta_panel)
+                    I2 = np.trapz(T2*(np.cos(theta_panel)-1), theta_panel)
+                    I3 = np.trapz(T3*(np.cos(theta_panel)-1), theta_panel)
+
+                    J1 = - 1/np.pi*np.trapz(T1, theta_panel)
+                    J2 = - 1/np.pi*np.trapz(T2, theta_panel)
+                    J3 = - 1/np.pi*np.trapz(T3, theta_panel)
+
+                    # Now we need to solve the linear system
+                    A  = np.array([[1+I2, 1+I3], [J2, J3]])
+                    b1 = - (I1 + sum(self.circulation['TEV'][:itev]) \
+                        + sum(self.circulation['LEV'][:ilev]))
+                    b2 = LESPcrit - J1
+                    b  = np.array([b1, b2 ])
+                    shed_gamma = np.linalg.solve(A, b)
+
+                    self.circulation['TEV'][itev]    = shed_gamma[0]
+                    self.circulation['LEV'][ilev]    = shed_gamma[1]
+
+                    self.circulation['bound'][itev] = I1 + self.circulation['TEV'][itev]*I2 \
+                          + self.circulation['LEV'][ilev]*I3
+                    W  = T1 + self.circulation['TEV'][itev]*T2 + self.circulation['LEV'][ilev]*T3
+                    self.fourier[i,0,0] = J1 + self.circulation['TEV'][itev]*J2 + self.circulation['LEV'][ilev]*J3
+                    for n in range(1,self.Ncoeffs):
+                       self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
+
+                    # Not updating the derivatives since A0(t) is no longer differentiable
+                    # Use the derivatives of the coefficients before the TEV
+                    # for n in range(self.Ncoeffs): # and their derivatives
+                    #    self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
 
             else: # LEV shedding does not occur
                 pass
 
-            self.LESP[itev] = A0
+            self.LESP[itev] = self.fourier[i,0,0]
 
             '''--------------------------------------------------------------'''
             '''-------------------- Airfoil circulation ---------------------'''
@@ -968,23 +1065,26 @@ class LUDVM():
    #    n_lev=n_lev-1
    #    kelv_enf=kelv_enf+lev(1,1)
    # end if
+# Cluster vortices by proximity into a single vortex to reduce the scalation
+# of computation time as the number of vortices increase (Faure 2019)
 
 if __name__ == "__main__":
 
-    self = LUDVM(t0=0, tf=18, dt=3e-2, chord=1, rho=1.225, Uinf=1, \
-                   Npoints = 81, Ncoeffs=30, LESPcrit=0.2, Naca = '0012') #4805
+    self = LUDVM(t0=0, tf=9, dt=3e-2, chord=1, rho=1.225, Uinf=1, \
+                   Npoints = 81, Ncoeffs=30, LESPcrit=0.2, Naca = '0012', method = 'Faure') #4805
 
     # self.animation(ani_interval=20)
 
     # LESP with and without cutting
-    # plt.figure()
-    # plt.plot(self.t, self.LESP_prev)
-    # plt.plot(self.t, self.LESP)
+    plt.figure(1)
+    plt.plot(self.t, self.LESP_prev)
+    plt.plot(self.t, self.LESP)
     #
     # Bound circulation check: should be the integral of airfoil dGammas
-    # plt.figure()
-    # plt.plot(self.circulation['bound'])
-    # plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
+    plt.figure(2)
+    plt.plot(self.circulation['bound'])
+    plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
+
 
 
     # Flow field - time evolution
