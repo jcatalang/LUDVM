@@ -220,16 +220,14 @@ class LUDVM():
 
     def motion_sinusoidal(self, alpha_m = 0, alpha_max = 10, h_max = 1, \
                           k = 0.2*np.pi, phi = 90, h0=0, x0=0.25):
-        # Definition of motion kinematics (Pitching and Heaving):
-        # Heaving:  h(t)     = h0 + h_max*cos(2*pi*f*t)
+        # Definition of motion kinematics:
+        # Heaving:  h(t)     = h_max*cos(2*pi*f*t)
         # Pitching: alpha(t) = alpham + alpha_max*cos(2*pi*f*t + phi)
-        # x-motion: x(t)     = x0 - Uinf*t
-        # Inputs: alpha_m (mean pitch in degrees)
-        #         alpha_max (pitch amplitude in degrees)
-        #         h_max (heaving amplitude)
-        #         k (reduced frequency: ratio between convective time and period)
-        #         phi (phase lag between heaving and pitching in degrees)
-        #         x0, h0: initial position of the pivot point
+        # Inputs: alpham (mean pitch in degrees), alpha_max (pitch amplitude in degrees)
+        # h_max (heaving amplitude),
+        # k (reduced frequency: ratio between convective time and period)
+        # phi (phase lag between heaving and pitching in degrees)
+        # x0, h0: initial position of the pivot point
 
         pi    = np.pi
         Uinf  = self.Uinf
@@ -286,21 +284,10 @@ class LUDVM():
         return None
 
     def motion_plunge(self, G = 1, T = 2, alpha_m = 0, h0=0, x0=0.25):
-        # Definition of motion kinematics (Plunge maneuver):
-        # The plunge maneuver is determined by the following expression:
-        # V(t) = -Vmax*sin(pi*t/T)**2. Where V=Vmax when t=T/2, in the middle
-        # of the maneuver. Vmax is the peak plunge velocity.
-        # Integrating V(t), h(t) is obtained (see expression below):
-        # Plunging: h(t)     = h0 - Vmax*t/2 + Vmax*T/(4*pi)*sin(2*pi*ti/T)
-        # Pitching: alpha(t) = alpha_m (constant)
-        # x-motion: x(t)     = x0 - Uinf*t
-        # Inputs: alpha_m (mean pitch in degrees)
-        #         G = Vmax/Uinf (velocity ratio)
-        #         T = 2*chord/U_inf  (duration of maneuver)
-        #         x0, h0: initial position of the pivot point
-        # If the time of simulation is higher than maneuver duration T,
-        # the airfoil continues with a straight path.
-
+        # FUNCTION THAT COMPUTES THE KINEMATICS OF THE PLUNGE MANEUVER
+        # G = Vmax/Uinf (velocity ratio)
+        # T = 2*chord/U_inf  (duration of maneuver)
+        # alpha_m is the angle of attack for the simulation
 
         pi    = np.pi
         Uinf  = self.Uinf
@@ -478,7 +465,7 @@ class LUDVM():
             '''--------------------------------------------------------------'''
             # Compute the position of the shed TEV
             if itev == 0:
-                # First TEV is located horizontally downstream at a distance 0.5*Uinf*dt from the trailing edge at t=0
+                # First TEV is located horizontally downstream at a distance 0.5*Uinf*dt from the trailing edge
                 self.path['TEV'][i,:,itev] = self.path['airfoil'][0,:,-1]  + [0.5*Uinf*dt,0]
             else:
                 # Shedding of the Trailing Edge Vortex (TEV)
@@ -558,10 +545,8 @@ class LUDVM():
 
                 # Compute the position of the shed LEV
                 if LEV_shed[i] == 0: # First LEV
-                # if i == 1:
                     #Shedding of the Leading Edge Vortex (TEV)
                     self.path['LEV'][i,:,ilev] = self.path['airfoil'][i,:,0]
-                # else:
                 elif LEV_shed[i] > 0:
                     if LEV_shed[i-1] != -1: # if a lev has been shed previously
                         # Shedding of the Leading Edge Vortex (TEV)
@@ -674,8 +659,7 @@ class LUDVM():
                 A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
                 self.fourier[i,0,:2] = A0, A1
                 self.circulation['bound'][itev] = Uinf*chord*pi*(A0 + A1/2)
-                # print(self.circulation['bound'][itev] + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1]))
-                # print(LESPcrit - A0)
+
                 # Now we compute the rest of fourier coefficients (from A2 to An)
                 for n in range(2,self.Ncoeffs):
                     self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
@@ -863,12 +847,13 @@ class LUDVM():
                        - self.Uinf*np.sin(alpha) - alpha_dot*(self.airfoil['x'] - self.piv) \
                        + h_dot*np.cos(alpha) - w
 
-               BCx = self.airfoil['detadx_panel']*(- u - self.Uinf*np.cos(alpha)  \
+
+               BCnx = self.airfoil['detadx_panel']*(- u - self.Uinf*np.cos(alpha)  \
                        - h_dot*np.sin(alpha) + alpha_dot*self.airfoil['eta_panel'])
-               BCz = W + w + self.Uinf*np.sin(alpha) - h_dot*np.cos(alpha) \
+               BCnz = W + w + self.Uinf*np.sin(alpha) - h_dot*np.cos(alpha) \
                        + alpha_dot*(self.airfoil['x_panel'] - self.piv)
 
-               self.BC[itev,:] = np.dot(BCx, BCz)
+               self.BC[itev,:] = BCnx + BCnz
 
             '''--------------------------------------------------------------'''
             '''-------------------- Vortex indices update -------------------'''
