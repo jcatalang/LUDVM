@@ -1,3 +1,4 @@
+    '''
     ## -----------------------------------------------------------------------
     # \title LUDVM | LESP-modulated Unsteady Discrete Vortex Method
     # ------------------------------------------------------------------------
@@ -35,6 +36,9 @@
     #       Motion sinusoidal added
     #       Airfoil circulation re-defined
     #       Other minor changes
+    # \date 16-07-2020 by J.M. Catalan \n
+    #       Solving method proposed by Faure et. al. added
+    #       Difference wrt. Ramesh: no need for iterating
     # ------------------------------------------------------------------------
     # \details
     #    Publication providing details on the LDVM theory is:
@@ -53,6 +57,12 @@
     #    Theor. Comput. Fluid Dyn., January 2013, DOI
     #    10.1007/s00162-012-0292-8.  Available from:
     #    http://www.mae.ncsu.edu/apa/publications.html#j021
+    # ........................................................................
+    #    Publication containing the details of the modified model:
+    #    A modified discrete-vortex method algorithm with shedding criterion
+    #    for aerodynamic coefficients prediction at high angle of attack
+    #    Thierry M. Faure, Laurent Dumas, Vincent Drouet, Olivier Montagnier.
+    #    Applied Mathematical Modelling, December 2018.
     # ........................................................................
     #    More details in Katz J. & Plotkin A. Low Speed Aerodynamics
     #    Chapter 13, Section 13.8 -> Unsteady Motion of a Two-Dimensional
