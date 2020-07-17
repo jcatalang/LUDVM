@@ -112,7 +112,7 @@ class LUDVM():
         self.maxerror = 1e-10      # Maximum error of the Newton Iteration Method (only for Ramesh method)
         self.maxiter  = 50         # Maximum number of iterations in the Newton Iteration Method (only for Ramesh method)
         self.epsilon  = 1e-4       # For the numerical derivative in Newton method (only for Ramesh method)
-        self.xgamma   = 0.5        # Gamma point location as % of panel, where the bound vortices are located
+        self.xgamma   = 0.25       # Gamma point location as % of panel, where the bound vortices are located
         self.method   = method     # Method for computing the Circulations: 'Ramesh' or 'Faure'
 
         self.t = np.arange(t0,tf+dt,dt)      # Time vector
@@ -564,8 +564,6 @@ class LUDVM():
 
                 self.circulation['bound'][itev] = I1 + self.circulation['TEV'][itev]*I2
 
-                kelvin =  self.circulation['bound'][itev] + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
-
                 J1 = - 1/np.pi*np.trapz(T1, theta_panel)
                 J2 = - 1/np.pi*np.trapz(T2, theta_panel)
 
@@ -693,7 +691,6 @@ class LUDVM():
                          if niter >= self.maxiter:
                              print('The solution did not converge when solving the LEV-TEV nonlinear system')
                              # break
-
 
                          niter = niter + 1
 
@@ -1012,7 +1009,7 @@ class LUDVM():
         ln,     = plt.plot([], [], 'k.', animated=True, markersize=2)
         ln_tev, = plt.plot([], [], 'r*', markersize=1, animated=True)
         ln_lev, = plt.plot([], [], 'b*', markersize=1, animated=True)
-        time_indices = np.arange(0,self.nt-1,step)
+        tev_indices = np.arange(0,self.nt-1,step)
         # lev_time_indices = np.arange(0,self.ilev,1)
 
         # xmin, xmax = -6, 2
@@ -1035,42 +1032,29 @@ class LUDVM():
            # Airfoil motion
            ln.set_data(self.path['airfoil_gamma_points'][i+1,0,:], self.path['airfoil_gamma_points'][i+1,1,:])
            # TEV motion
-           ln_tev.set_data(self.path['TEV'][i,0,:i+1],self.path['TEV'][i,1,:i+1])
+           ln_tev.set_data(self.path['TEV'][i+1,0,:i+1],self.path['TEV'][i+1,1,:i+1])
            # LEV motion
            if self.LEV_shed[i] != -1:
                self.ilev2 = int(self.LEV_shed[i]) #ilev at that step
-
-           ln_lev.set_data(self.path['LEV'][i,0,:self.ilev2],self.path['LEV'][i,1,:self.ilev2])
+           if self.ilev2 > 0:
+               ln_lev.set_data(self.path['LEV'][i+1,0,:self.ilev2+1],self.path['LEV'][i+1,1,:self.ilev2+1])
            return ln, ln_tev, ln_lev,
 
-        ani = FuncAnimation(fig, func=update, frames=time_indices,
+        ani = FuncAnimation(fig, func=update, frames=tev_indices,
                     init_func=init, blit=True, interval = ani_interval,repeat=False)
         plt.show()
 
         return None
 
-# TO IMPROVE:
-   # !Remove TEVs and LEVs thats have crossed a certain distance and update kelvin condition
-   # if (tev(1,2)-bound(n_div,2)>del_dist) then
-   #    do i_tev=1,n_tev-1
-   #       tev(i_tev,:)=tev(i_tev+1,:)
-   #    end do
-   #    n_tev=n_tev-1
-   #    kelv_enf=kelv_enf+tev(1,1)
-   # end if
-   # if (n_lev>0 .and. lev(1,2)-bound(n_div,2)>del_dist) then
-   #    do i_lev=1,n_lev-1
-   #       lev(i_lev,:)=lev(i_lev+1,:)
-   #    end do
-   #    n_lev=n_lev-1
-   #    kelv_enf=kelv_enf+lev(1,1)
-   # end if
 # Cluster vortices by proximity into a single vortex to reduce the scalation
 # of computation time as the number of vortices increase (Faure 2019)
 
+# Implement tandem airfoils (Faure 2020): almost exactly the same as for 1
+# See: Numerical study of two-airfoil arrangements by a discrete vortex method
+
 if __name__ == "__main__":
 
-    self = LUDVM(t0=0, tf=9, dt=3e-2, chord=1, rho=1.225, Uinf=1, \
+    self = LUDVM(t0=0, tf=9, dt=1.5e-2, chord=1, rho=1.225, Uinf=1, \
                    Npoints = 81, Ncoeffs=30, LESPcrit=0.2, Naca = '0012', method = 'Faure') #4805
 
     # self.animation(ani_interval=20)
