@@ -17,7 +17,7 @@ class LUDVM():
     #        thin-airfoil theory augmented with intermittent LEV model.
     #        Proposed by Kiran Ramesh and Ashok Gopalarathnam.
     #
-    #        LESP stands for Leading-edge suction parameter.
+    #        LESP stands for Leading-Edge Suction Parameter.
     #
     #        The code is distributed in a python class called LUDVM, and its
     #        methods:
@@ -231,13 +231,15 @@ class LUDVM():
     def motion_sinusoidal(self, alpha_m = 0, alpha_max = 10, h_max = 1, \
                           k = 0.2*np.pi, phi = 90, h0=0, x0=0.25):
         # Definition of motion kinematics:
-        # Heaving:  h(t)     = h_max*cos(2*pi*f*t)
-        # Pitching: alpha(t) = alpham + alpha_max*cos(2*pi*f*t + phi)
+        # Heaving:            h(t)     = h0 + h_max*cos(2*pi*f*t)
+        # Pitching:           alpha(t) = alpham + alpha_max*cos(2*pi*f*t + phi)
+        # Horizontal flight:  x(t)     = x0 - Uinf*t
+        #
         # Inputs: alpham (mean pitch in degrees), alpha_max (pitch amplitude in degrees)
-        # h_max (heaving amplitude),
-        # k (reduced frequency: ratio between convective time and period)
-        # phi (phase lag between heaving and pitching in degrees)
-        # x0, h0: initial position of the pivot point
+        #         h_max (heaving amplitude),
+        #         k (reduced frequency: ratio between convective time and period)
+        #         phi (phase lag between heaving and pitching in degrees)
+        #         x0, h0: initial position of the pivot point
 
         pi    = np.pi
         Uinf  = self.Uinf
@@ -294,10 +296,24 @@ class LUDVM():
         return None
 
     def motion_plunge(self, G = 1, T = 2, alpha_m = 0, h0=0, x0=0.25):
-        # FUNCTION THAT COMPUTES THE KINEMATICS OF THE PLUNGE MANEUVER
-        # G = Vmax/Uinf (velocity ratio)
-        # T = 2*chord/U_inf  (duration of maneuver)
-        # alpha_m is the angle of attack for the simulation
+        # The plunge maneuver is defined by the following equation:
+        # V(t) = -Vmax*sin^2(pi*t/T), where T is the maneuver duration and
+        # Vmax is the peak plunge velocity, reached in the middle of the
+        # maneuver, for t/T = 0.5. If we integrate V, we obtain the motion of
+        # the airfoil in the vertical direction. The pitching is constant
+        # in the plunge maneuver. Then, the whole motions is:
+        # Plunging:           h(t)     = h0 - Vmax * t/2 + Vmax*T/(4*pi)*sin(2*pi*t/T)
+        # Pitching:           alpha(t) = alpha_m
+        # Horizontal flight:  x(t)     = x0 - Uinf*t
+        #
+        # Inputs: G=Vmax/Uinf (velocity ratio)
+        #         T (maneuver duration)
+        #         alpha_m (pitching for the simulation)
+        #         x0, h0 (initial position of the pivot point)
+        #
+        # If the time of simulation is higher than the plunge maneuver duration
+        # (tf > T), once completed the maneuver, the airfoil continues
+        # in horizontal flight.
 
         pi    = np.pi
         Uinf  = self.Uinf
@@ -413,7 +429,7 @@ class LUDVM():
 
         return W
 
-    def time_loop(self, print_dt = 50, BCcheck = False, panel = True):
+    def time_loop(self, print_dt = 50, BCcheck = False):
 
         pi = np.pi
 
@@ -760,7 +776,7 @@ class LUDVM():
                        self.fourier[i,0,n] = 2/pi * np.trapz(W/Uinf*np.cos(n*theta_panel), theta_panel)
 
                     # Not updating the derivatives since A0(t) is no longer differentiable
-                    # Use the derivatives of the coefficients before the TEV
+                    # Use the derivatives of the coefficients before the LEV
                     # for n in range(self.Ncoeffs): # and their derivatives
                     #    self.fourier[i,1,n] = (self.fourier[i,0,n] - self.fourier[i-1,0,n])/dt
 
@@ -932,7 +948,6 @@ class LUDVM():
             if BCcheck == True:
                xa, za = self.path['airfoil_gamma_points'][i,0,:], self.path['airfoil_gamma_points'][i,1,:]
                u1, w1 = self.induced_velocity(circulation_wake, xw, zw, xa, za)
-               # print(u1.shape, self.alpha.shape)
                # u1, w1 are in global coordinates, we need to rotate them to local
                u = u1*np.cos(alpha) - w1*np.sin(alpha)  # tangential to chord (u)
                w = u1*np.sin(alpha) + w1*np.cos(alpha)  # normal to chord (w)
@@ -1068,7 +1083,6 @@ if __name__ == "__main__":
     plt.figure(2)
     plt.plot(self.circulation['bound'])
     plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
-
 
 
     # Flow field - time evolution
