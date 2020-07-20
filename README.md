@@ -1,6 +1,8 @@
-# LUDVM | LESP-modulated Unsteady Discrete Vortex Method
+#### LUDVM | LESP-modulated Unsteady Discrete Vortex Method
+
 Author: Juan Manuel Catalan Gomez. PhD Candidate in Unsteady Aerodynamics and CFD.
-### Brief description
+
+##### Brief description
 
 Code to solve 2D unsteady airfoil flow problems: using unsteady thin-airfoil theory augmented with intermittent LEV model. Proposed by Kiran Ramesh and Ashok Gopalarathnam.
 
@@ -8,7 +10,7 @@ LESP stands for Leading-edge Suction Parameter: $\text{LESP} (t) = A_0(t)$, defi
 $$
 A_0(t) = - \frac{1}{\pi} \int_0^\pi \frac{W(x,t)}{U} \text{d}\theta,
 $$
-with $W(x,t)$ being the induced velocity normal to the aerofoil surface, computed from components of motion kinematics, $U$ being horizontal velocity of the airfoil, and $\theta$ being a variable of transformation related to the chordwise coordinate $x$.
+with $W(x,t)$ being the induced velocity normal to the aerofoil surface, computed from components of motion kinematics, $U$ being horizontal velocity of the airfoil, and $\theta$ being a variable of transformation related to the chordwise coordinate $x$. When reaching a critical value of the $\text{LESP}(t)$ such that $|\text{LESP}(t)| \geq \text{LESP}_{crit}$, which is an input of the code, the $\text{LESP}(t)$ is limited to such value and a Leading Edge Vortex (LEV) is shed at that time step.
 
 The code is distributed in a python class called LUDVM, and its methods:
 
@@ -26,7 +28,7 @@ Example of calling:
      self = LUDVM(t0=0, tf=20, dt=5e-2, chord=1, rho=1.225, Uinf=1, \
                   Npoints = 81, Ncoeffs=30, LESPcrit=0.2, Naca = '0012')
 
-### Details:
+#### Details:
 
 ​	   Publication providing details on the LDVM theory is:
 ​       Kiran Ramesh, Ashok Gopalarathnam, Kenneth Granlund, Michael V. Ol and
@@ -69,20 +71,21 @@ Example of calling:
 ​       More detailed info on PhD thesis:
 ​       Kiran Ramesh. Theory and Low-Order Modeling of Unsteady Airfoil Flows
 
-### External dependencies
+##### External dependencies
 
 Needs the package *airfoils* installed: https://pypi.org/project/airfoils/
 Installation:
 
 1. First choice (if you are not in conda): 
- ```
-    pip install airfoils
- ```
+
+   ```pip install airfoils
+   pip install airfoils
+   ```
 
 2. Second choice: if you are using anaconda, you need to install the *pip* package inside conda before. Thus do:
-     ```
+
        conda install pip
-     ```
+
    Now you need to use *pip* to install airfoils. Introduce the following:
 
    ```
