@@ -8,7 +8,7 @@ LESP stands for Leading-edge Suction Parameter: $\text{LESP} (t) = A_0(t)$, defi
 $$
 A_0(t) = - \frac{1}{\pi} \int_0^\pi \frac{W(x,t)}{U} \text{d}\theta,
 $$
-with $W(x,t)$ being the induced velocity normal to the aerofoil surface, computed from computents of motion kinematics, $U$ being horizontal velocity of the airfoil, and $\theta$ being a variable of transformation related to the chordwise coordinate $x$.
+with $W(x,t)$ being the induced velocity normal to the aerofoil surface, computed from components of motion kinematics, $U$ being horizontal velocity of the airfoil, and $\theta$ being a variable of transformation related to the chordwise coordinate $x$.
 
 The code is distributed in a python class called LUDVM, and its methods:
 
