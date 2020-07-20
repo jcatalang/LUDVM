@@ -74,20 +74,15 @@ Example of calling:
 Needs the package *airfoils* installed: https://pypi.org/project/airfoils/
 Installation:
 
-1. First choice: 
-
-    pip install airfoils (if you are not in conda)
-        - 2nd choice: if you are using anaconda, you need to install the pip
-          package inside conda before. Thus, do: conda install pip.
-          Now you need to use pip to install airfoils. Introduce the following:
-               ~/tools/anaconda3/bin/pip install airfoils
-          Where ~/tools/anaconda3/bin/pip is the path to the pip package
-          in your PC.
+1. First choice (if you are not in conda): 
+ ```
+    pip install airfoils
+ ```
 
 2. Second choice: if you are using anaconda, you need to install the *pip* package inside conda before. Thus do:
-
-       conda install pip.
-
+     ```
+       conda install pip
+     ```
    Now you need to use *pip* to install airfoils. Introduce the following:
 
    ```
