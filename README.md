@@ -1,8 +1,8 @@
-#### LUDVM | LESP-modulated Unsteady Discrete Vortex Method
+## LUDVM | LESP-modulated Unsteady Discrete Vortex Method
 
 Author: Juan Manuel Catalan Gomez. PhD Candidate in Unsteady Aerodynamics and CFD.
 
-##### Brief description
+### Brief description
 
 Code to solve 2D unsteady airfoil flow problems: using unsteady thin-airfoil theory augmented with intermittent LEV model. Proposed by Kiran Ramesh and Ashok Gopalarathnam.
 
@@ -28,7 +28,7 @@ Example of calling:
      self = LUDVM(t0=0, tf=20, dt=5e-2, chord=1, rho=1.225, Uinf=1, \
                   Npoints = 81, Ncoeffs=30, LESPcrit=0.2, Naca = '0012')
 
-#### Details:
+### Details:
 
 ​	   Publication providing details on the LDVM theory is:
 ​       Kiran Ramesh, Ashok Gopalarathnam, Kenneth Granlund, Michael V. Ol and
@@ -71,7 +71,7 @@ Example of calling:
 ​       More detailed info on PhD thesis:
 ​       Kiran Ramesh. Theory and Low-Order Modeling of Unsteady Airfoil Flows
 
-##### External dependencies
+### External dependencies
 
 Needs the package *airfoils* installed: https://pypi.org/project/airfoils/
 Installation:
