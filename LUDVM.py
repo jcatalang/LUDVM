@@ -21,7 +21,7 @@ class LUDVM():
     #
     #        The code is distributed in a python class called LUDVM, and its
     #        methods:
-    #           - airfoil
+    #           - airfoil_generation
     #           - motion_plunge | motion_sinusoidal
     #           - induced_velocity
     #           - airfoil_downwash
@@ -109,7 +109,7 @@ class LUDVM():
         self.Uinf     = Uinf       # Freestream Velocity [m/s]l
         self.Npoints  = Npoints    # Number of airfoil nodes
         self.Ncoeffs  = Ncoeffs    # Number of coefficients in the Fourier expansion
-        self.piv      = 1/3*chord # Pivot point for the pitching motion
+        self.piv      = 1/3*chord  # Pivot point for the pitching motion and for moment calculation
         self.LESPcrit = LESPcrit   # Critical Leading Edge Suction Parameter (LESP)
         self.maxerror = 1e-10      # Maximum error of the Newton Iteration Method (only for Ramesh method)
         self.maxiter  = 50         # Maximum number of iterations in the Newton Iteration Method (only for Ramesh method)
@@ -132,10 +132,10 @@ class LUDVM():
         self.start_time = timeit.default_timer()
         # Below, the methods are called
         if Naca is not None:
-            self.airfoil(Naca = Naca)
+            self.airfoil_generation(Naca = Naca)
         else:
             try:
-             self.airfoil(Naca = None, foil_filename=foil_filename)
+             self.airfoil_generation(Naca = None, foil_filename=foil_filename)
             except: print('Please introduce a valid foil_filename file')
         # self.motion_plunge(G = G, T = T, alpha_m = alpha_m, h0=0, x0=0)
         self.motion_sinusoidal(alpha_m = alpha_m, alpha_max = alpha_max, \
@@ -147,7 +147,7 @@ class LUDVM():
 
         return None
 
-    def airfoil(self, Naca = '0012', filename = None,  \
+    def airfoil_generation(self, Naca = '0012', filename = None,  \
                       Npoints = None, uniform_spacing = 'theta'):
         from airfoils import Airfoil
         from airfoils.fileio  import import_airfoil_data
