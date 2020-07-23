@@ -164,9 +164,9 @@ class LUDVM():
               xupper1, yupper1 = upper[0,:], upper[1,:]
               xlower1, ylower1 = lower[0,:], lower[1,:]
               # Defining interpolants
-              yupper_i = interp1(xupper1, yupper1, kind='cubic', bounds_error=False, \
+              yupper_i = interp1d(xupper1, yupper1, kind='cubic', bounds_error=False, \
                         fill_value="extrapolate");
-              ylower_i = interp1(xlower1, ylower1, kind='cubic', bounds_error=False, \
+              ylower_i = interp1d(xlower1, ylower1, kind='cubic', bounds_error=False, \
                         fill_value="extrapolate");
               # Obtaining the airfoil with Npoints
               xupper, xlower = np.linspace(0,1,np.floor(Npoints/2)), np.linspace(0,1,np.floor(Npoints/2))
@@ -1016,8 +1016,8 @@ class LUDVM():
             u_wake, w_wake = self.induced_velocity(circulation_wake, xw, zw, xp, zp)
             u_foil, w_foil = self.induced_velocity(circulation_foil, xa, za, xp, zp)
 
-            u[i,:,:] = (u_wake + u_foil).reshape(np.shape(x))
-            w[i,:,:] = (w_wake + w_foil).reshape(np.shape(x))
+            u[itev,:,:] = (u_wake + u_foil).reshape(np.shape(x))
+            w[itev,:,:] = (w_wake + w_foil).reshape(np.shape(x))
 
         self.xff, self.zff = x, z
         self.uff, self.wff = u, w
