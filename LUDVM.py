@@ -135,7 +135,7 @@ class LUDVM():
             self.airfoil_generation(Naca = Naca)
         else:
             try:
-             self.airfoil_generation(Naca = None, foil_filename=foil_filename)
+                self.airfoil_generation(Naca = None, filename=foil_filename)
             except: print('Please introduce a valid foil_filename file')
         # self.motion_plunge(G = G, T = T, alpha_m = alpha_m, h0=0, x0=0)
         self.motion_sinusoidal(alpha_m = alpha_m, alpha_max = alpha_max, \
@@ -165,9 +165,9 @@ class LUDVM():
               xlower1, ylower1 = lower[0,:], lower[1,:]
               # Defining interpolants
               yupper_i = interp1d(xupper1, yupper1, kind='cubic', bounds_error=False, \
-                        fill_value="extrapolate");
+                        fill_value="extrapolate")
               ylower_i = interp1d(xlower1, ylower1, kind='cubic', bounds_error=False, \
-                        fill_value="extrapolate");
+                        fill_value="extrapolate")
               # Obtaining the airfoil with Npoints
               xupper, xlower = np.linspace(0,1,np.floor(Npoints/2)), np.linspace(0,1,np.floor(Npoints/2))
               yupper, ylower = yupper_i(xupper), ylower_i(xlower)
@@ -327,7 +327,7 @@ class LUDVM():
         # alpha_m = alpha_m  # Mean Pitch [degrees]
         alpha_m = alpha_m * pi / 180
         Vmax = G*Uinf
-        T = T * chord/Uinf;
+        T = T * chord/Uinf
         h0 = h0   # initial position of 'pivot' point
         x0 = x0   # initial position of 'pivot' point
 
