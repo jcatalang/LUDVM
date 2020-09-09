@@ -1,7 +1,11 @@
 import os, sys
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import timeit
+
+mpl.rc('text', usetex = True)
+mpl.rc('font', family = 'serif')
 
 class LUDVM():
     '''
@@ -29,6 +33,7 @@ class LUDVM():
     #           - compute_coefficients
     #           - flowfield
     #           - animation
+    #           - propulsive_efficiency
     #
     #  Example of calling:
     #     self = LUDVM(t0=0, tf=20, dt=5e-2, chord=1, rho=1.225, Uinf=1, \
@@ -45,8 +50,12 @@ class LUDVM():
     # \date 16-07-2020 by J.M. Catalan \n
     #       Solving method proposed by Faure et. al. added
     #       Difference wrt. Ramesh: no need for iterating
-    # \date 23-07-2020 by J.M. Catalan
+    # \date 23-07-2020 by J.M. Catalan \n
     #       Propulsive efficiency computed
+    # \date 9-09-2020 by J.M. Catalan  \n
+    #       Effective angle of attack computed
+    #       Added sin/cos choice in motion_sinusoidal
+    #
     # ------------------------------------------------------------------------
     # \details
     #    Publication providing details on the LDVM theory is:
@@ -139,7 +148,7 @@ class LUDVM():
             except: print('Please introduce a valid foil_filename file')
         # self.motion_plunge(G = G, T = T, alpha_m = alpha_m, h0=0, x0=0)
         self.motion_sinusoidal(alpha_m = alpha_m, alpha_max = alpha_max, \
-                              h_max = h_max, k = k, phi = phi, h0=0, x0=0)
+                              h_max = h_max, k = k, phi = phi, h0=0, x0=0, motion = 'cos')
         self.time_loop()
         self.compute_coefficients()
         elapsed_time=timeit.default_timer() - self.start_time
@@ -231,7 +240,7 @@ class LUDVM():
         return None
 
     def motion_sinusoidal(self, alpha_m = 0, alpha_max = 10, h_max = 1, \
-                          k = 0.2*np.pi, phi = 90, h0=0, x0=0.25):
+                          k = 0.2*np.pi, phi = 90, h0=0, x0=0.25, motion = 'cos'):
         # Definition of motion kinematics:
         # Heaving:            h(t)     = h0 + h_max*cos(2*pi*f*t)
         # Pitching:           alpha(t) = alpham + alpha_max*cos(2*pi*f*t + phi)
@@ -253,21 +262,30 @@ class LUDVM():
         alpha_m, alpha_max, phi = alpha_m*pi/180, alpha_max*pi/180, phi*pi/180
 
         # Initialize arrays for the motion
-        alpha, alpha_dot = np.zeros(nt), np.zeros(nt)
+        alpha, alpha_dot, alpha_e = np.zeros(nt), np.zeros(nt), np.zeros(nt)
         h    , h_dot     = np.zeros(nt), np.zeros(nt)
         x    , x_dot     = np.zeros(nt), np.zeros(nt)
 
         # Defining motion of the pivot point
         for i in range(nt):
-           ti = self.t[i]
-           alpha[i]     =   alpha_m + alpha_max*np.cos(2*pi*f*ti + phi)
-           alpha_dot[i] = - alpha_max*2*pi*f*np.sin(2*pi*f*ti + phi)
-           h[i]         =   h0 + h_max*np.cos(2*pi*f*ti)
-           h_dot[i]     = - h_max*2*pi*f*np.sin(2*pi*f*ti)
-           x[i]         =   x0 - Uinf*ti
-           x_dot[i]     = - Uinf
+            ti = self.t[i]
+            if motion == 'cos':
+                alpha[i]     =   alpha_m + alpha_max*np.cos(2*pi*f*ti + phi)
+                alpha_dot[i] = - alpha_max*2*pi*f*np.sin(2*pi*f*ti + phi)
+                h[i]         =   h0 + h_max*np.cos(2*pi*f*ti)
+                h_dot[i]     = - h_max*2*pi*f*np.sin(2*pi*f*ti)
+            elif motion == 'sin':
+                alpha[i]     =   alpha_m + alpha_max*np.sin(2*pi*f*ti + phi)
+                alpha_dot[i] =   alpha_max*2*pi*f*np.cos(2*pi*f*ti + phi)
+                h[i]         =   h0 + h_max*np.sin(2*pi*f*ti)
+                h_dot[i]     = - h_max*2*pi*f*np.cos(2*pi*f*ti)                
+
+            x[i]         =   x0 - Uinf*ti
+            x_dot[i]     = - Uinf
 
         xpiv, hpiv = x, h
+
+        alpha_e = alpha - np.arctan2(h_dot/Uinf) # effective angle of attack
 
         # Get motion of the entire airfoil as a function of time
         path_airfoil = np.zeros([self.nt, 2, self.Npoints]) # t,xy, Npoints
@@ -290,7 +308,7 @@ class LUDVM():
                         self.xgamma*(path_airfoil[:,:,1:]-path_airfoil[:,:,:-1])
 
         self.phi  , self.h_max      = phi, h_max
-        self.alpha, self.alpha_dot = alpha, alpha_dot
+        self.alpha, self.alpha_dot, self.alpha_e = alpha, alpha_dot, alpha_e
         self.hpiv , self.h_dot     = hpiv , h_dot
         self.xpiv , self.x_dot     = xpiv , x_dot
         self.path                  = {'airfoil': path_airfoil,  \
@@ -335,7 +353,7 @@ class LUDVM():
         self.T = T
 
         # Initialize arrays for the motion
-        alpha, alpha_dot = np.zeros(nt), np.zeros(nt)
+        alpha, alpha_dot, alpha_e = np.zeros(nt), np.zeros(nt), np.zeros(nt)
         h    , h_dot     = np.zeros(nt), np.zeros(nt)
         x    , x_dot     = np.zeros(nt), np.zeros(nt)
 
@@ -358,6 +376,8 @@ class LUDVM():
             x_dot[i] = - Uinf
 
         xpiv, hpiv = x, h
+
+        alpha_e = alpha - np.arctan2(h_dot/Uinf) # effective angle of attack
 
         # Get motion of the entire airfoil as a function of time
         path_airfoil = np.zeros([self.nt, 2, self.Npoints]) # t,xy, Npoints
@@ -1101,22 +1121,41 @@ class LUDVM():
 if __name__ == "__main__":
 
     # Optmimum pitching case
+    # rho = 1.225
+    # chord = 1
+    # Uinf = 1
+    # k = 0.7798 #Reduced frequency k = 2*pi*c*f/U
+    # f = k*Uinf/(2*np.pi*chord)
+    # T = 1/f
+    # tfinal = 5*T
+    # hmax = 1.4819*chord
+    # phi = 77.5885
+    # alpha_max = 46.2737
+    # NACA = '0030'
+    # dt = 3.5e-2
+    # alpham = 0
+
+    # Other sinusoidal data: thrust
     rho = 1.225
     chord = 1
     Uinf = 1
-    k = 0.7798 #Reduced frequency k = 2*pi*c*f/U
+    k = 0.2*np.pi #Reduced frequency k = 2*pi*c*f/U
     f = k*Uinf/(2*np.pi*chord)
     T = 1/f
-    hmax = 1.4819*chord
-    phi = 77.5885
-    alpha_max = 46.2737
+    tfinal = 3*T
+    hmax = chord
+    phi = 90
+    alpha_max = 30
+    NACA = '0012'
+    dt = 2.5e-2
+    alpham = 0 # 0 or 10
 
-    self = LUDVM(t0=0, tf=5*T, dt=3.5e-2, chord=chord, rho=rho, Uinf=Uinf, \
-         Npoints=80, Ncoeffs=30, LESPcrit=0.2, Naca = '0030', \
-         alpha_m = 0, alpha_max = alpha_max, k = k, phi = phi, h_max = hmax,
+    self = LUDVM(t0=0, tf=tfinal, dt=dt, chord=chord, rho=rho, Uinf=Uinf, \
+         Npoints=80, Ncoeffs=30, LESPcrit=0.14, Naca = NACA, \
+         alpha_m = alpham, alpha_max = alpha_max, k = k, phi = phi, h_max = hmax,
          verbose = True, method = 'Faure')
 
-    self.propulsive_efficiency()
+    # self.propulsive_efficiency()
 
 
     # self.animation(ani_interval=20)
@@ -1125,6 +1164,8 @@ if __name__ == "__main__":
     # plt.figure(1)
     # plt.plot(self.t, self.LESP_prev)
     # plt.plot(self.t, self.LESP)
+    # plt.ylabel('LESP')
+    # plt.xlabel('t')
     # #
     # # Bound circulation check: should be the integral of airfoil dGammas
     # plt.figure(2)
