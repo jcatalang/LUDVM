@@ -6,6 +6,45 @@ import timeit
 
 mpl.rc('text', usetex = True)
 mpl.rc('font', family = 'serif')
+mpl.interactive(True)
+
+'''
+------------------------------------------------------------------------------
+----------------------------- Misc. functions --------------------------------
+------------------------------------------------------------------------------
+'''
+
+def generate_free_vortices(nvorts, cvorts, rpervortlayer, npervortlayer, gammapervort):
+    # nvorts is the number of vortices (cloud/group of point vortices)
+    # cvorts are the center coordinates of each group vortex
+    # rpervortlayer are radius of the layers of each cloud vortex
+    # npervortlayer is the number of point vortices that are part of each layer of the cloud vortex
+    # gammapervort is the circulation of the group of vortices
+    # Function to be used -------
+    def circle_points(r, n):
+       xc, yc = [], []
+       for i in range(len(r)): # loop in the different radius (which will contain a number of points per radius)
+           theta   = np.linspace(0, 2*np.pi, n[i], endpoint=False)
+           xc = np.append(xc, r[i]*np.cos(theta))
+           yc = np.append(yc, r[i]*np.sin(theta))
+       xc, yc = xc[:,np.newaxis], yc[:,np.newaxis]
+       circles = np.concatenate((xc, yc), axis=1) 
+       return circles       
+    # ---------------------------
+    xvorts, yvorts, gammavorts = [], [], []
+    for n in range(nvorts): # loop in group vortices
+        xyvort = circle_points(rpervortlayer, npervortlayer)
+        xvorts = np.append(xvorts, xyvort[:,0]) + cvorts[n,0]
+        yvorts = np.append(yvorts, xyvort[:,1]) + cvorts[n,1]
+        # Now we assume the circulation is uniformly spread over all the point vortices
+        # inside the group vortex (maybe consider exponential or something similar as a
+        # better aproximation)
+        gamma      = gammapervort[n]/len(xvorts)
+        gammavort  = gamma*np.ones([np.shape(xyvort)[0]])
+        gammavorts = np.append(gammavorts, gammavort) 
+    xvorts, yvorts = xvorts[:,np.newaxis], yvorts[:,np.newaxis]
+    xyvorts = np.concatenate((xvorts, yvorts), axis=1) 
+    return xyvorts, gammavorts
 
 class LUDVM():
     '''
@@ -55,6 +94,8 @@ class LUDVM():
     # \date 9-09-2020 by J.M. Catalan  \n
     #       Effective angle of attack computed
     #       Added sin/cos choice in motion_sinusoidal
+    # \date 5-05-2021 by J.M. Catalan \n
+    #       Free vortices functionality added
     #
     # ------------------------------------------------------------------------
     # \details
@@ -108,7 +149,8 @@ class LUDVM():
                        Npoints=80, Ncoeffs=30, LESPcrit=0.2, Naca = '0012', \
                        foil_filename = None, G = 1, T = 2, alpha_m = 0, \
                        alpha_max = 10, k = 0.2*np.pi, phi = 90, h_max = 1, \
-                       verbose = True, method = 'Faure'):
+                       verbose = True, method = 'Faure', \
+                       n_freevort = None, circulation_freevort = None, xy_freevort = None):
         self.t0 = t0               # Beggining of simulation
         self.tf = tf               # End of simulation
         self.dt = dt               # Time step
@@ -137,6 +179,21 @@ class LUDVM():
 
         self.ilev2 = 0          # for lev plotting purposes
         # self.int_gammax_old = 0 # for loads calculation
+
+        # Free vortices initialization and initial bound circulation
+        self.alpha_m    = alpha_m
+        if n_freevort is not None and circulation_freevort is not None \
+            and xy_freevort is not None:
+            self.n_freevort  = n_freevort
+            self.circulation_freevort = circulation_freevort # A single column with nfreevort rows
+            self.xy_freevort = xy_freevort # [xcoords, ycoords]: nfreevort rows, 2 columns (initial position)
+                                          # [    .        .  ]
+                                          # [    .        .  ]
+        else:
+            self.n_freevort  = 1
+            self.circulation_freevort = np.array([0])
+            self.xy_freevort = np.array([0,0]) [:,np.newaxis]
+
 
         self.start_time = timeit.default_timer()
         # Below, the methods are called
@@ -285,7 +342,7 @@ class LUDVM():
 
         xpiv, hpiv = x, h
 
-        alpha_e = alpha - np.arctan2(h_dot/Uinf) # effective angle of attack
+        alpha_e = alpha - np.arctan2(h_dot,Uinf) # effective angle of attack
 
         # Get motion of the entire airfoil as a function of time
         path_airfoil = np.zeros([self.nt, 2, self.Npoints]) # t,xy, Npoints
@@ -468,15 +525,18 @@ class LUDVM():
         dt          = self.dt
 
         # Initializing vortices coordinates and circulation
-        nvort = self.nt-1
+        nvort     = self.nt-1
+        n_freevort = self.n_freevort
         # initializing paths of shed vortices
         # 1st index: time; 2nd index: x,y: 3rd index: Number of vortex
-        self.path['TEV'] = np.zeros([self.nt, 2, nvort]) # At each dt, a TEV is shed
-        self.path['LEV'] = np.zeros([self.nt, 2, nvort]) # There will be nt LEV shed as maximum
-
+        self.path['TEV']  = np.zeros([self.nt, 2, nvort])      # At each dt, a TEV is shed
+        self.path['LEV']  = np.zeros([self.nt, 2, nvort])      # There will be nt LEV shed as maximum
+        self.path['FREE'] = np.zeros([self.nt, 2, n_freevort]) # Free vortices
+        self.path['FREE'][0,:,:] = self.xy_freevort            # Placing free vortices at their initial positions
         # initializing circulations
         self.circulation = {'TEV': np.zeros([nvort])} #initializing dictionary
         self.circulation['LEV']     = np.zeros([nvort])
+        self.circulation['FREE']    = self.circulation_freevort                 # Filling free vortices with their initial circulation
         self.circulation['bound']   = np.zeros([nvort])
         self.circulation['airfoil'] = np.zeros([nvort, self.Npoints-1])         # dGamma(x,t) = gamma(x,t)*dx
         self.BC                     = np.zeros([nvort, self.Npoints])           # Boundary condition computation (normal velocity to airfoil)
@@ -497,6 +557,14 @@ class LUDVM():
         self.LESP    = np.zeros(self.nt)
         self.LESP_prev = np.zeros(self.nt)
 
+        # Initial condition (distribution of a flat plate at a fixed angle of attack alpha_m)
+        # One can also load the A0, A1 initial coeffs for an specific airfoil at specific angle of attack (from another simulation)
+        # initial Gamma for Kelvin's condition: 
+        A0, A1 = np.sin(self.alpha_m), 0
+        circulation_bound = Uinf*chord*pi*(A0 + A1/2)
+        self.circulation['IC'] = np.sum(self.circulation['FREE']) + circulation_bound
+        self.fourier[0,0,:2] = A0, A1
+        
         itev = 0 #tev counter
         ilev = 0 #lev counter
         LEV_shed = -1*np.ones(self.nt) # stores the information of intermittent LEV shedding per dt
@@ -509,8 +577,9 @@ class LUDVM():
                 print('Step {} out of {}. Elapsed time {}'.format(i, self.nt-1, timeit.default_timer() - self.start_time))
 
             # Rewrite coordinates of the rest of vortices in the structure (not including vortices at time step i)
-            self.path['TEV'][i,:,:itev]  = self.path['TEV'][i-1,:,:itev] # [:i] does not include i
-            self.path['LEV'][i,:,:ilev]  = self.path['LEV'][i-1,:,:ilev]
+            self.path['TEV'] [i,:,:itev]  = self.path ['TEV'][i-1,:,:itev] # [:i] does not include i
+            self.path['LEV'] [i,:,:ilev]  = self.path ['LEV'][i-1,:,:ilev]
+            self.path['FREE'][i,:,:]      = self.path['FREE'][i-1,:,:] 
 
             '''--------------------------------------------------------------'''
             '''---------------------- TEV computation -----------------------'''
@@ -533,29 +602,30 @@ class LUDVM():
                shed_vortex_gamma = -1 # guess for Newton-Raphson
                while abs(f) > self.maxerror and niter < self.maxiter:
                    self.circulation['TEV'][itev] = shed_vortex_gamma
-                   circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                   xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                   zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                   circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                   xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+                   zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
                    W = self.airfoil_downwash(circulation, xw, zw, i)
                    # Compute A0, A1 coefficients
                    A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                    A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
                    # Get f for Newton-Raphson
                    circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                   f = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                   f = circulation_bound + np.sum(self.circulation['TEV'][:itev+1]) + np.sum(self.circulation['LEV'][:ilev+1]) + \
+                       np.sum(self.circulation['FREE']) - self.circulation['IC']
 
                    # We set now gamma_TEV = gamma_TEV + epsilon
                    self.circulation['TEV'][itev] = shed_vortex_gamma + epsilon
                    # Get f + delta for Newton-Raphson: we need to compute again W, A0, A1
-                   circulation   = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                   # print(circulation)
-                   xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                   zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                   circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                   xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+                   zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
                    W  = self.airfoil_downwash(circulation, xw, zw, i)
                    A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                    A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
                    circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                   fdelta = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                   fdelta = circulation_bound + np.sum(self.circulation['TEV'][:itev+1]) + np.sum(self.circulation['LEV'][:ilev+1]) + \
+                       np.sum(self.circulation['FREE']) - self.circulation['IC']
 
                    # Newton-Raphson:
                    fprime = (fdelta - f) / epsilon # numerical df/dGamma
@@ -570,9 +640,9 @@ class LUDVM():
                    niter = niter + 1
 
                # Solution after convergenge:
-               circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-               xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-               zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+               circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+               xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+               zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
                W  = self.airfoil_downwash(circulation, xw, zw, i)
                A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
@@ -586,9 +656,9 @@ class LUDVM():
 
             elif self.method == 'Faure': # without iterating
                 # Contribution of existing vortices
-                circulation = np.append(self.circulation['TEV'][:itev], self.circulation['LEV'][:ilev])
-                xw = np.append(self.path['TEV'][i,0,:itev], self.path['LEV'][i,0,:ilev])
-                zw = np.append(self.path['TEV'][i,1,:itev], self.path['LEV'][i,1,:ilev])
+                circulation = np.append(np.append(self.circulation['TEV'][:itev], self.circulation['LEV'][:ilev]), self.circulation['FREE'])
+                xw = np.append(np.append(self.path['TEV'][i,0,:itev], self.path['LEV'][i,0,:ilev]), self.path['FREE'][i,0,:])
+                zw = np.append(np.append(self.path['TEV'][i,1,:itev], self.path['LEV'][i,1,:ilev]), self.path['FREE'][i,1,:])
                 T1  = self.airfoil_downwash(circulation, xw, zw, i)
 
                 # We compute the intensity of the shed TEV
@@ -601,8 +671,9 @@ class LUDVM():
 
                 I1 = np.trapz(T1*(np.cos(theta_panel)-1), theta_panel)
                 I2 = np.trapz(T2*(np.cos(theta_panel)-1), theta_panel)
-                self.circulation['TEV'][itev] = - (I1 + sum(self.circulation['TEV'][:itev]) \
-                    + sum(self.circulation['LEV'][:ilev]))/(1+I2)
+                self.circulation['TEV'][itev] = - (I1 + np.sum(self.circulation['TEV'][:itev]) \
+                    + np.sum(self.circulation['LEV'][:ilev]) + np.sum(self.circulation['FREE']) \
+                    - self.circulation['IC'])/(1+I2)
 
                 self.circulation['bound'][itev] = I1 + self.circulation['TEV'][itev]*I2
 
@@ -659,46 +730,49 @@ class LUDVM():
                          self.circulation['TEV'][itev] = TEV_shed_gamma #initial guess
                          self.circulation['LEV'][ilev] = LEV_shed_gamma #initial guess
 
-                         circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                         xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                         zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                         circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                         xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+                         zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])                         
                          W = self.airfoil_downwash(circulation, xw, zw, i)
                          # Compute A0, A1 coefficients
                          A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                          A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
                          # Get f1 for Newton method
                          cbound = Uinf*chord*pi*(A0 + A1/2)
-                         f1 = cbound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                         f1 = cbound + np.sum(self.circulation['TEV'][:itev+1]) + np.sum(self.circulation['LEV'][:ilev+1]) + \
+                                       np.sum(self.circulation['FREE']) - self.circulation['IC']
                          # Get f2 for Newton method
                          f2 = LESPcrit - A0
 
                          # Now we need to compute f1delta and f2delta
                          self.circulation['TEV'][itev] = TEV_shed_gamma + epsilon #initial guess
                          self.circulation['LEV'][ilev] = LEV_shed_gamma           #initial guess
-                         circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                         xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                         zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                         circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                         xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+                         zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
                          W = self.airfoil_downwash(circulation, xw, zw, i)
                          # Compute A0, A1 coefficients
                          A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                          A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
                          # Get f1 for Newton method
                          circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                         f1_delta_TEV = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                         f1_delta_TEV = circulation_bound + np.sum(self.circulation['TEV'][:itev+1]) + np.sum(self.circulation['LEV'][:ilev+1]) + \
+                                                            np.sum(self.circulation['FREE']) - self.circulation['IC']
                          f2_delta_TEV = LESPcrit - A0
 
                          self.circulation['TEV'][itev] = TEV_shed_gamma             #initial guess
                          self.circulation['LEV'][ilev] = LEV_shed_gamma + epsilon   #initial guess
-                         circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                         xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                         zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                         circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                         xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+                         zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
                          W = self.airfoil_downwash(circulation, xw, zw, i)
                          # Compute A0, A1 coefficients
                          A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                          A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
                          # Get f1 for Newton method
                          circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-                         f1_delta_LEV = circulation_bound + sum(self.circulation['TEV'][:itev+1]) + sum(self.circulation['LEV'][:ilev+1])
+                         f1_delta_LEV = circulation_bound + np.sum(self.circulation['TEV'][:itev+1]) + np.sum(self.circulation['LEV'][:ilev+1]) + \
+                                                            np.sum(self.circulation['FREE']) - self.circulation['IC']
                          f2_delta_LEV = LESPcrit - A0
 
                          # Build the Jacobian
@@ -737,9 +811,9 @@ class LUDVM():
                          niter = niter + 1
 
                    # Solution after convergence:
-                   circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-                   xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1])
-                   zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1])
+                   circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                   xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+                   zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
                    W = self.airfoil_downwash(circulation, xw, zw, i)
                    A0 = - 1/pi * np.trapz(W/Uinf                    , theta_panel)
                    A1 =   2/pi * np.trapz(W/Uinf*np.cos(theta_panel), theta_panel)
@@ -757,9 +831,9 @@ class LUDVM():
 
                 elif self.method == 'Faure': # without iterating
                     # Contribution of existing vortices
-                    circulation = np.append(self.circulation['TEV'][:itev], self.circulation['LEV'][:ilev])
-                    xw = np.append(self.path['TEV'][i,0,:itev], self.path['LEV'][i,0,:ilev])
-                    zw = np.append(self.path['TEV'][i,1,:itev], self.path['LEV'][i,1,:ilev])
+                    circulation = np.append(np.append(self.circulation['TEV'][:itev], self.circulation['LEV'][:ilev]), self.circulation['FREE'])
+                    xw = np.append(np.append(self.path['TEV'][i,0,:itev], self.path['LEV'][i,0,:ilev]), self.path['FREE'][i,0,:])
+                    zw = np.append(np.append(self.path['TEV'][i,1,:itev], self.path['LEV'][i,1,:ilev]), self.path['FREE'][i,1,:])
                     T1  = self.airfoil_downwash(circulation, xw, zw, i)
 
                     # We compute the intensity of the shed TEV and LEV
@@ -785,10 +859,11 @@ class LUDVM():
 
                     # Now we need to solve the linear system
                     A  = np.array([[1+I2, 1+I3], [J2, J3]])
-                    b1 = - (I1 + sum(self.circulation['TEV'][:itev]) \
-                        + sum(self.circulation['LEV'][:ilev]))
+                    b1 = - (I1 + np.sum(self.circulation['TEV'][:itev]) \
+                         + np.sum(self.circulation['LEV'][:ilev]) + np.sum(self.circulation['FREE'])  \
+                         - self.circulation['IC'])
                     b2 = LESPcrit - J1
-                    b  = np.array([b1, b2 ])
+                    b  = np.array([b1, b2])
                     shed_gamma = np.linalg.solve(A, b)
 
                     self.circulation['TEV'][itev]    = shed_gamma[0]
@@ -848,7 +923,7 @@ class LUDVM():
                 self.circulation['gamma_airfoil'][itev,j] = gamma
 
             for j in range(Npanels):
-                self.circulation['Gamma_airfoil'][itev,j] = sum(self.circulation['airfoil'][itev,:j+1])
+                self.circulation['Gamma_airfoil'][itev,j] = np.sum(self.circulation['airfoil'][itev,:j+1])
 
             # dxa    = self.airfoil['x'][1:] - self.airfoil['x'][:-1]
             # An = self.fourier[i,0,1:]
@@ -887,9 +962,9 @@ class LUDVM():
             xa         = self.airfoil['x']
             x_gamma    = self.airfoil['x_panel']
 
-            circulation = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-            xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]) # x of wake vortices
-            zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]) # y of wake vortices
+            circulation = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+            xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+            zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])  
             xp, zp = self.path['airfoil_gamma_points'][i,0,:], self.path['airfoil_gamma_points'][i,1,:]
             xpoint, zpoint = np.array(xp), np.array(zp)
             u1, w1 = self.induced_velocity(circulation, xw, zw, xpoint, zpoint)
@@ -933,10 +1008,10 @@ class LUDVM():
             '''--------------------------------------------------------------'''
             '''----------- Convection of vortices (wake roll-up) ------------'''
             '''--------------------------------------------------------------'''
-            circulation_wake = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
+            circulation_wake = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
             circulation_foil = self.circulation['airfoil'][itev,:]
-            xw = np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]) # x of wake vortices
-            zw = np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]) # y of wake vortices
+            xw = np.append(np.append(self.path['TEV'][i,0,:itev+1], self.path['LEV'][i,0,:ilev+1]), self.path['FREE'][i,0,:])
+            zw = np.append(np.append(self.path['TEV'][i,1,:itev+1], self.path['LEV'][i,1,:ilev+1]), self.path['FREE'][i,1,:])
             xa = self.path['airfoil_gamma_points'][i,0,:] # x of airfoil vortices
             za = self.path['airfoil_gamma_points'][i,1,:] # z of airfoil vortices
 
@@ -957,6 +1032,15 @@ class LUDVM():
 
             self.path['LEV'][i,0,:ilev+1] = self.path['LEV'][i,0,:ilev+1] + dt*(u_wake + u_foil)
             self.path['LEV'][i,1,:ilev+1] = self.path['LEV'][i,1,:ilev+1] + dt*(w_wake + w_foil)
+
+            # Free vortices convection
+            xp = self.path['FREE'][i,0,:]
+            zp = self.path['FREE'][i,1,:]
+            u_wake, w_wake = self.induced_velocity(circulation_wake, xw, zw, xp, zp)
+            u_foil, w_foil = self.induced_velocity(circulation_foil, xa, za, xp, zp, viscous = True)
+
+            self.path['FREE'][i,0,:] = self.path['FREE'][i,0,:] + dt*(u_wake + u_foil)
+            self.path['FREE'][i,1,:] = self.path['FREE'][i,1,:] + dt*(w_wake + w_foil)
 
             self.ilev     = ilev
             self.itev     = itev
@@ -1051,9 +1135,10 @@ class LUDVM():
         # Animation
         fig, ax = plt.subplots()
         xdata, ydata = [], []
-        ln,     = plt.plot([], [], 'k.', animated=True, markersize=2)
-        ln_tev, = plt.plot([], [], 'r*', markersize=1, animated=True)
-        ln_lev, = plt.plot([], [], 'b*', markersize=1, animated=True)
+        ln,      = plt.plot([], [], 'k.', animated=True, markersize=2)
+        ln_tev,  = plt.plot([], [], 'r*', markersize=1, animated=True)
+        ln_lev,  = plt.plot([], [], 'b*', markersize=1, animated=True)
+        ln_free, = plt.plot([], [], 'g*', markersize=1, animated=True)
         tev_indices = np.arange(0,self.nt-1,step)
         # lev_time_indices = np.arange(0,self.ilev,1)
 
@@ -1068,6 +1153,7 @@ class LUDVM():
            ln.set_data(xdata,ydata)
            ln_tev.set_data(xdata,ydata)
            ln_lev.set_data(xdata,ydata)
+           ln_free.set_data(xdata,ydata)
            return ln,
 
         def update(i):
@@ -1083,7 +1169,10 @@ class LUDVM():
                self.ilev2 = int(self.LEV_shed[i]) #ilev at that step
            if self.ilev2 > 0:
                ln_lev.set_data(self.path['LEV'][i+1,0,:self.ilev2+1],self.path['LEV'][i+1,1,:self.ilev2+1])
-           return ln, ln_tev, ln_lev,
+            # Free vortices motion
+           if self.n_freevort != 1:
+               ln_free.set_data(self.path['FREE'][i+1,0,:],self.path['FREE'][i+1,1,:])
+           return ln, ln_tev, ln_lev, ln_free,
 
         ani = FuncAnimation(fig, func=update, frames=tev_indices,
                     init_func=init, blit=True, interval = ani_interval,repeat=False)
@@ -1120,6 +1209,22 @@ class LUDVM():
 
 if __name__ == "__main__":
 
+    # Free vortices generation
+    nvorts         = 10
+    cvorts         = np.zeros([nvorts, 2])
+    cvorts[:,0]    = np.linspace(-10, -1, nvorts)                      # xc
+    cvorts[:,1]    = 0.5*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1]) - 0.5 # yc 
+    nlayerspervort = 4
+    rpervortlayer  = 0.3*np.linspace(0,1,nlayerspervort)
+    npervortlayer  = 1*np.array([1, 5, 10, 15])
+    gammapervort   = 20*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1])
+
+    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, rpervortlayer, npervortlayer, gammapervort)
+
+    # n_freevort, circulation_freevort, xy_freevort = None, None, None
+    n_freevort, circulation_freevort, xy_freevort = len(gammavorts), gammavorts, np.transpose(xyvorts)
+    # plt.plot(xyvorts[:,0], xyvorts[:,1], '.')
+
     # Optmimum pitching case
     # rho = 1.225
     # chord = 1
@@ -1135,30 +1240,31 @@ if __name__ == "__main__":
     # dt = 3.5e-2
     # alpham = 0
 
-    # Other sinusoidal data: thrust
+    # TFG Juanfra data
     rho = 1.225
     chord = 1
     Uinf = 1
     k = 0.2*np.pi #Reduced frequency k = 2*pi*c*f/U
     f = k*Uinf/(2*np.pi*chord)
     T = 1/f
-    tfinal = 3*T
+    tfinal = 2*T
     hmax = chord
-    phi = 90
+    phi = 80
     alpha_max = 30
     NACA = '0012'
-    dt = 2.5e-2
-    alpham = 0 # 0 or 10
+    dt = 3.5e-2
+    alpham = 15 # 0 or 10
 
     self = LUDVM(t0=0, tf=tfinal, dt=dt, chord=chord, rho=rho, Uinf=Uinf, \
          Npoints=80, Ncoeffs=30, LESPcrit=0.14, Naca = NACA, \
          alpha_m = alpham, alpha_max = alpha_max, k = k, phi = phi, h_max = hmax,
-         verbose = True, method = 'Faure')
+         verbose = True, method = 'Faure', n_freevort = n_freevort, \
+         circulation_freevort = circulation_freevort, xy_freevort =  xy_freevort)
 
     # self.propulsive_efficiency()
 
 
-    # self.animation(ani_interval=20)
+    self.animation(ani_interval=20)
 
     # # LESP with and without cutting
     # plt.figure(1)
@@ -1168,9 +1274,9 @@ if __name__ == "__main__":
     # plt.xlabel('t')
     # #
     # # Bound circulation check: should be the integral of airfoil dGammas
-    # plt.figure(2)
-    # plt.plot(self.circulation['bound'])
-    # plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
+    plt.figure(2)
+    plt.plot(self.circulation['bound'])
+    plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
 
 
     # Flow field - time evolution
