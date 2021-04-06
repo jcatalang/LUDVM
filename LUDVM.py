@@ -1201,12 +1201,6 @@ class LUDVM():
         self.etap = Ctm/Cpm        
         return None
 
-# Cluster vortices by proximity into a single vortex to reduce the scalation
-# of computation time as the number of vortices increase (Faure 2019)
-
-# Implement tandem airfoils (Faure 2020): almost exactly the same as for 1
-# See: Numerical study of two-airfoil arrangements by a discrete vortex method
-
 if __name__ == "__main__":
 
     # Free vortices generation
@@ -1240,7 +1234,6 @@ if __name__ == "__main__":
     # dt = 3.5e-2
     # alpham = 0
 
-    # TFG Juanfra data
     rho = 1.225
     chord = 1
     Uinf = 1
@@ -1274,9 +1267,9 @@ if __name__ == "__main__":
     # plt.xlabel('t')
     # #
     # # Bound circulation check: should be the integral of airfoil dGammas
-    plt.figure(2)
-    plt.plot(self.circulation['bound'])
-    plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
+    #plt.figure(2)
+    #plt.plot(self.circulation['bound'])
+    #plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
 
 
     # Flow field - time evolution
