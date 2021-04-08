@@ -14,12 +14,14 @@ mpl.interactive(True)
 ------------------------------------------------------------------------------
 '''
 
-def generate_free_vortices(nvorts, cvorts, rpervortlayer, npervortlayer, gammapervort):
-    # nvorts is the number of vortices (cloud/group of point vortices)
-    # cvorts are the center coordinates of each group vortex
-    # rpervortlayer are radius of the layers of each cloud vortex
-    # npervortlayer is the number of point vortices that are part of each layer of the cloud vortex
-    # gammapervort is the circulation of the group of vortices
+def generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort):
+    # - nvorts is the number of vortices (cloud/group of point vortices)
+    # - cvorts are the center coordinates of each group vortex
+    # - vortradius is the radius of each group vortex
+    # - layerspervort is the number of radius to be included per group vortex
+    # - npervortlayer is the number of point vortices that are part of each layer 
+    #        of the cloud vortex (from the inner layer to the outermost)
+    # - gammapervort is the circulation of each cloud of vortices
     # Function to be used -------
     def circle_points(r, n):
        xc, yc = [], []
@@ -32,10 +34,11 @@ def generate_free_vortices(nvorts, cvorts, rpervortlayer, npervortlayer, gammape
        return circles       
     # ---------------------------
     xvorts, yvorts, gammavorts = [], [], []
+    rpervortlayer  = vortradius*np.linspace(0,1,layerspervort)
     for n in range(nvorts): # loop in group vortices
-        xyvort = circle_points(rpervortlayer, npervortlayer)
-        xvorts = np.append(xvorts, xyvort[:,0]) + cvorts[n,0]
-        yvorts = np.append(yvorts, xyvort[:,1]) + cvorts[n,1]
+        xyvort = circle_points(rpervortlayer, npervortlayer) + cvorts[n,:]
+        xvorts = np.append(xvorts, xyvort[:,0]) 
+        yvorts = np.append(yvorts, xyvort[:,1]) 
         # Now we assume the circulation is uniformly spread over all the point vortices
         # inside the group vortex (maybe consider exponential or something similar as a
         # better aproximation)
@@ -203,6 +206,7 @@ class LUDVM():
             try:
                 self.airfoil_generation(Naca = None, filename=foil_filename)
             except: print('Please introduce a valid foil_filename file')
+
         # self.motion_plunge(G = G, T = T, alpha_m = alpha_m, h0=0, x0=0)
         self.motion_sinusoidal(alpha_m = alpha_m, alpha_max = alpha_max, \
                               h_max = h_max, k = k, phi = phi, h0=0, x0=0, motion = 'cos')
@@ -528,7 +532,7 @@ class LUDVM():
         nvort     = self.nt-1
         n_freevort = self.n_freevort
         # initializing paths of shed vortices
-        # 1st index: time; 2nd index: x,y: 3rd index: Number of vortex
+        # 1st index: time; 2nd index: x,y; 3rd index: Number of vortex
         self.path['TEV']  = np.zeros([self.nt, 2, nvort])      # At each dt, a TEV is shed
         self.path['LEV']  = np.zeros([self.nt, 2, nvort])      # There will be nt LEV shed as maximum
         self.path['FREE'] = np.zeros([self.nt, 2, n_freevort]) # Free vortices
@@ -559,11 +563,12 @@ class LUDVM():
 
         # Initial condition (distribution of a flat plate at a fixed angle of attack alpha_m)
         # One can also load the A0, A1 initial coeffs for an specific airfoil at specific angle of attack (from another simulation)
-        # initial Gamma for Kelvin's condition: 
-        A0, A1 = np.sin(self.alpha_m), 0
+        A0, A1 = np.sin(self.alpha_m), 0      
         circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-        self.circulation['IC'] = np.sum(self.circulation['FREE']) + circulation_bound
         self.fourier[0,0,:2] = A0, A1
+        # Initial Gamma to be accounted for in Kelvin's condition (this would be zero without free vortices and initial bound circulation)
+        self.circulation['IC'] = np.sum(self.circulation['FREE']) + circulation_bound
+
         
         itev = 0 #tev counter
         ilev = 0 #lev counter
@@ -1142,14 +1147,15 @@ class LUDVM():
         tev_indices = np.arange(0,self.nt-1,step)
         # lev_time_indices = np.arange(0,self.ilev,1)
 
-        # xmin, xmax = -6, 2
-        # ymin, ymax = -6, 2
-        xmin, xmax = 1.1*np.min(self.path['airfoil'][:,0,:]),1.1*np.max(self.path['airfoil'][:,0,:])
-        ymin, ymax = -5*abs(np.min(self.path['airfoil'][:,1,:])),5*abs(np.max(self.path['airfoil'][:,1,:]))
+        xmin, xmax = -10, 2
+        ymin, ymax = -1, 1
+        # xmin, xmax = 1.1*np.min(self.path['airfoil'][:,0,:]),1.1*np.max(self.path['airfoil'][:,0,:])
+        # ymin, ymax = -5*abs(np.min(self.path['airfoil'][:,1,:])),5*abs(np.max(self.path['airfoil'][:,1,:]))
 
         def init():
            ax.set_xlim(xmin, xmax)
            ax.set_ylim(ymin, ymax)
+           ax.set_aspect('equal')
            ln.set_data(xdata,ydata)
            ln_tev.set_data(xdata,ydata)
            ln_lev.set_data(xdata,ydata)
@@ -1204,16 +1210,27 @@ class LUDVM():
 if __name__ == "__main__":
 
     # Free vortices generation
-    nvorts         = 10
-    cvorts         = np.zeros([nvorts, 2])
-    cvorts[:,0]    = np.linspace(-10, -1, nvorts)                      # xc
-    cvorts[:,1]    = 0.5*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1]) - 0.5 # yc 
-    nlayerspervort = 4
-    rpervortlayer  = 0.3*np.linspace(0,1,nlayerspervort)
-    npervortlayer  = 1*np.array([1, 5, 10, 15])
-    gammapervort   = 20*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1])
+    # nvorts         = 10
+    # cvorts         = np.zeros([nvorts, 2])
+    # cvorts[:,0]    = np.linspace(-10, -1, nvorts)                      # xc
+    # cvorts[:,1]    = 0.5*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1]) - 0.5 # yc 
+    # vortradius     = 0.3
+    # nlayerspervort = 4
+    # npervortlayer  = 1*np.array([1, 5, 10, 15])
+    # gammapervort   = 20*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1])
 
-    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, rpervortlayer, npervortlayer, gammapervort)
+    # Free turbulence analogy: lots of free vortices in the flow field
+    nvorts = 200
+    cvorts         = np.zeros([nvorts, 2])
+    cvorts[:,0]    = np.random.uniform(-10, 0, nvorts) # xc
+    cvorts[:,1]    = np.random.uniform(-1, 1, nvorts) # yc 
+    vortradius     = 0.2
+    layerspervort = 2
+    npervortlayer  = 1*np.array([1, 7])
+    gamma          = 0.5 
+    gammapervort   = gamma*np.random.choice([-1,1], nvorts) #random number generation only among -1 and 1 values
+
+    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
 
     # n_freevort, circulation_freevort, xy_freevort = None, None, None
     n_freevort, circulation_freevort, xy_freevort = len(gammavorts), gammavorts, np.transpose(xyvorts)
@@ -1234,19 +1251,34 @@ if __name__ == "__main__":
     # dt = 3.5e-2
     # alpham = 0
 
+    # Heaving and Pitching Case
+    # rho = 1.225
+    # chord = 1
+    # Uinf = 1
+    # k = 0.2*np.pi #Reduced frequency k = 2*pi*c*f/U
+    # f = k*Uinf/(2*np.pi*chord)
+    # T = 1/f
+    # tfinal = 1*T
+    # hmax = chord
+    # phi = 80
+    # alpha_max = 30
+    # NACA = '0012'
+    # dt = 3.5e-2
+    # alpham = 15 # 0 or 10
+
+    # Straight flight at fixed AoA
     rho = 1.225
     chord = 1
     Uinf = 1
-    k = 0.2*np.pi #Reduced frequency k = 2*pi*c*f/U
-    f = k*Uinf/(2*np.pi*chord)
-    T = 1/f
-    tfinal = 2*T
-    hmax = chord
-    phi = 80
-    alpha_max = 30
+    k = 0 #Reduced frequency k = 2*pi*c*f/U
+    T = 10
+    tfinal = 1*T
+    hmax = 0
+    phi = 0
+    alpha_max = 0
     NACA = '0012'
     dt = 3.5e-2
-    alpham = 15 # 0 or 10
+    alpham = 10 # 0 or 10
 
     self = LUDVM(t0=0, tf=tfinal, dt=dt, chord=chord, rho=rho, Uinf=Uinf, \
          Npoints=80, Ncoeffs=30, LESPcrit=0.14, Naca = NACA, \
@@ -1254,23 +1286,26 @@ if __name__ == "__main__":
          verbose = True, method = 'Faure', n_freevort = n_freevort, \
          circulation_freevort = circulation_freevort, xy_freevort =  xy_freevort)
 
-    # self.propulsive_efficiency()
+    # # self.propulsive_efficiency()
 
 
     self.animation(ani_interval=20)
 
-    # # LESP with and without cutting
-    # plt.figure(1)
-    # plt.plot(self.t, self.LESP_prev)
-    # plt.plot(self.t, self.LESP)
-    # plt.ylabel('LESP')
-    # plt.xlabel('t')
-    # #
-    # # Bound circulation check: should be the integral of airfoil dGammas
-    #plt.figure(2)
-    #plt.plot(self.circulation['bound'])
-    #plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
+    # # # LESP with and without cutting
+    # # plt.figure(1)
+    # # plt.plot(self.t, self.LESP_prev)
+    # # plt.plot(self.t, self.LESP)
+    # # plt.ylabel('LESP')
+    # # plt.xlabel('t')
+    # # #
+    # # # Bound circulation check: should be the integral of airfoil dGammas
+    # plt.figure(2)
+    # plt.plot(self.circulation['bound'])
+    # plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
 
+    # Lift coefficient
+    #plt.figure(3)
+    #plt.plot(self.t, self.Cl)
 
     # Flow field - time evolution
     # xmin, xmax = -8, 2
