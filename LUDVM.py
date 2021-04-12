@@ -51,6 +51,7 @@ def generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortla
 
 def generate_flowfield_turbulence():
     # Free turbulence analogy: lots of free vortices in the flow field
+    ### --------------- INPUTS (to be modified) ---------------  ###
     nvorts             = 140
     layerspervort      = 2
     npervortlayer      = 1*np.array([1, 5])
@@ -58,10 +59,11 @@ def generate_flowfield_turbulence():
     gammapervort       = gamma*np.random.choice([-1,1], nvorts) #random number generation only among -1 and 1 values
     vortradius         = 0.2
     mindistanceBTvorts = 2*vortradius #critical distance is 2*vortradius
-    # Initial generation of vortex centres (it will change later)
-    cvorts             = np.zeros([nvorts, 2])
     xmin, xmax         = -10, 0
     ymin, ymax         = -1.5, 1.5
+    ### ------------------- END INPUTS ------------------  ###
+    # Initial generation of vortex centres (it will change later)
+    cvorts             = np.zeros([nvorts, 2])
     cvorts[:,0]        = np.random.uniform(xmin, xmax, nvorts) # xc
     cvorts[:,1]        = np.random.uniform(ymin, ymax, nvorts) # yc 
     # Now we generate again those vortices not fulfilling the minimum distance
@@ -1235,6 +1237,7 @@ class LUDVM():
         self.etap = Ctm/Cpm        
         return None
 
+    
 if __name__ == "__main__":
 
     # Free vortices generation
