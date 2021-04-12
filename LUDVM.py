@@ -10,7 +10,7 @@ mpl.interactive(True)
 
 '''
 ------------------------------------------------------------------------------
------------------------------ Misc. functions --------------------------------
+------------------------- Free vortices functions ----------------------------
 ------------------------------------------------------------------------------
 '''
 
@@ -47,6 +47,35 @@ def generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortla
         gammavorts = np.append(gammavorts, gammavort) 
     xvorts, yvorts = xvorts[:,np.newaxis], yvorts[:,np.newaxis]
     xyvorts = np.concatenate((xvorts, yvorts), axis=1) 
+    return xyvorts, gammavorts
+
+def generate_flowfield_turbulence():
+    # Free turbulence analogy: lots of free vortices in the flow field
+    nvorts             = 140
+    layerspervort      = 2
+    npervortlayer      = 1*np.array([1, 5])
+    gamma              = 0.5 
+    gammapervort       = gamma*np.random.choice([-1,1], nvorts) #random number generation only among -1 and 1 values
+    vortradius         = 0.2
+    mindistanceBTvorts = 2*vortradius #critical distance is 2*vortradius
+    # Initial generation of vortex centres (it will change later)
+    cvorts             = np.zeros([nvorts, 2])
+    xmin, xmax         = -10, 0
+    ymin, ymax         = -1.5, 1.5
+    cvorts[:,0]        = np.random.uniform(xmin, xmax, nvorts) # xc
+    cvorts[:,1]        = np.random.uniform(ymin, ymax, nvorts) # yc 
+    # Now we generate again those vortices not fulfilling the minimum distance
+    for n in range(1,nvorts):
+        iwhile = 0
+        distances = ((cvorts[:n,0] - cvorts[n,0])**2 + (cvorts[:n,1] - cvorts[n,1])**2)**0.5
+        while np.any(distances < mindistanceBTvorts) and iwhile < 15000: # Generate new vortex center satisfying the minimum distance wrt to the existing vortices centers
+            cvorts[n,0]    = np.random.uniform(xmin, xmax, 1) # xc
+            cvorts[n,1]    = np.random.uniform(ymin, ymax, 1) # yc 
+            distances = ((cvorts[:n,0] - cvorts[n,0])**2 + (cvorts[:n,1] - cvorts[n,1])**2)**0.5
+            iwhile = iwhile + 1
+        if iwhile == 15000:
+            print('VortexError: Cannot locate more vortices with the actual radius and separation')
+    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
     return xyvorts, gammavorts
 
 class LUDVM():
@@ -153,7 +182,7 @@ class LUDVM():
                        foil_filename = None, G = 1, T = 2, alpha_m = 0, \
                        alpha_max = 10, k = 0.2*np.pi, phi = 90, h_max = 1, \
                        verbose = True, method = 'Faure', \
-                       n_freevort = None, circulation_freevort = None, xy_freevort = None):
+                       circulation_freevort = None, xy_freevort = None):
         self.t0 = t0               # Beggining of simulation
         self.tf = tf               # End of simulation
         self.dt = dt               # Time step
@@ -185,9 +214,8 @@ class LUDVM():
 
         # Free vortices initialization and initial bound circulation
         self.alpha_m    = alpha_m
-        if n_freevort is not None and circulation_freevort is not None \
-            and xy_freevort is not None:
-            self.n_freevort  = n_freevort
+        if circulation_freevort is not None and xy_freevort is not None:
+            self.n_freevort  = len(circulation_freevort)
             self.circulation_freevort = circulation_freevort # A single column with nfreevort rows
             self.xy_freevort = xy_freevort # [xcoords, ycoords]: nfreevort rows, 2 columns (initial position)
                                           # [    .        .  ]
@@ -1148,7 +1176,7 @@ class LUDVM():
         # lev_time_indices = np.arange(0,self.ilev,1)
 
         xmin, xmax = -10, 2
-        ymin, ymax = -1, 1
+        ymin, ymax = -2, 2
         # xmin, xmax = 1.1*np.min(self.path['airfoil'][:,0,:]),1.1*np.max(self.path['airfoil'][:,0,:])
         # ymin, ymax = -5*abs(np.min(self.path['airfoil'][:,1,:])),5*abs(np.max(self.path['airfoil'][:,1,:]))
 
@@ -1219,22 +1247,17 @@ if __name__ == "__main__":
     # npervortlayer  = 1*np.array([1, 5, 10, 15])
     # gammapervort   = 20*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1])
 
-    # Free turbulence analogy: lots of free vortices in the flow field
-    nvorts = 200
-    cvorts         = np.zeros([nvorts, 2])
-    cvorts[:,0]    = np.random.uniform(-10, 0, nvorts) # xc
-    cvorts[:,1]    = np.random.uniform(-1, 1, nvorts) # yc 
-    vortradius     = 0.2
-    layerspervort = 2
-    npervortlayer  = 1*np.array([1, 7])
-    gamma          = 0.5 
-    gammapervort   = gamma*np.random.choice([-1,1], nvorts) #random number generation only among -1 and 1 values
+    # xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
 
-    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
+    xyvorts, gammavorts = generate_flowfield_turbulence()
 
-    # n_freevort, circulation_freevort, xy_freevort = None, None, None
-    n_freevort, circulation_freevort, xy_freevort = len(gammavorts), gammavorts, np.transpose(xyvorts)
-    # plt.plot(xyvorts[:,0], xyvorts[:,1], '.')
+    circulation_freevort, xy_freevort = None, None
+    circulation_freevort, xy_freevort = gammavorts, np.transpose(xyvorts)
+
+    # fig = plt.figure(99)
+    # ax = fig.add_subplot(111)
+    # ax.plot(xyvorts[:,0], xyvorts[:,1], '.')
+    # ax.set_aspect('equal')
 
     # Optmimum pitching case
     # rho = 1.225
@@ -1251,7 +1274,7 @@ if __name__ == "__main__":
     # dt = 3.5e-2
     # alpham = 0
 
-    # Heaving and Pitching Case
+    # Pitching and Heaving case (TFG)
     # rho = 1.225
     # chord = 1
     # Uinf = 1
@@ -1270,7 +1293,7 @@ if __name__ == "__main__":
     rho = 1.225
     chord = 1
     Uinf = 1
-    k = 0 #Reduced frequency k = 2*pi*c*f/U
+    k = 0 
     T = 10
     tfinal = 1*T
     hmax = 0
@@ -1278,16 +1301,15 @@ if __name__ == "__main__":
     alpha_max = 0
     NACA = '0012'
     dt = 3.5e-2
-    alpham = 10 # 0 or 10
+    alpham = 15 # 0 or 10
 
     self = LUDVM(t0=0, tf=tfinal, dt=dt, chord=chord, rho=rho, Uinf=Uinf, \
          Npoints=80, Ncoeffs=30, LESPcrit=0.14, Naca = NACA, \
          alpha_m = alpham, alpha_max = alpha_max, k = k, phi = phi, h_max = hmax,
-         verbose = True, method = 'Faure', n_freevort = n_freevort, \
+         verbose = True, method = 'Faure', \
          circulation_freevort = circulation_freevort, xy_freevort =  xy_freevort)
 
-    # # self.propulsive_efficiency()
-
+    # # # self.propulsive_efficiency()
 
     self.animation(ani_interval=20)
 
@@ -1304,8 +1326,9 @@ if __name__ == "__main__":
     # plt.plot(np.sum(self.circulation['airfoil'], axis=1), '.', markersize = 8)
 
     # Lift coefficient
-    #plt.figure(3)
-    #plt.plot(self.t, self.Cl)
+    # plt.figure(3)
+    # plt.plot(self.t, self.Cl)
+
 
     # Flow field - time evolution
     # xmin, xmax = -8, 2
