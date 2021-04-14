@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import timeit
+import scipy
 
 mpl.rc('text', usetex = True)
 mpl.rc('font', family = 'serif')
@@ -49,19 +50,61 @@ def generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortla
     xyvorts = np.concatenate((xvorts, yvorts), axis=1) 
     return xyvorts, gammavorts
 
-def generate_flowfield_turbulence():
+def generate_free_single_vortex():
+    # Free single vortex
+    nvorts         = 1
+    cvorts         = np.zeros([nvorts, 2])
+    cvorts[:,0]    = -2.5        # xc
+    cvorts[:,1]    = -0.5        # yc 
+    vortradius     = 0.5
+    layerspervort  = 5
+    npervortlayer  = 1*np.array([1, 5, 10, 15, 30])
+    gammapervort   = 10*np.array([1])
+    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
+    ## Checking Stokes Theorem so that the double integral of the computed vorticity matches the circulation (gamma)
+    ## It needs to use the self.flowfield function to have the velocities and vorticity computed. Code:
+    # from scipy import integrate
+    # Double integral should be equal to circulation (Checking Stokes Theorem)
+    # ome = self.ome_ff[0,:,:]
+    # stokes2 = scipy.integrate.trapz(ome, dx=dr, axis=0)
+    # stokes2 = scipy.integrate.trapz(stokes2, dx=dr, axis=0)
+    return xyvorts, gammavorts
+
+def generate_flowfield_vortices(vortex_radius = 0.2, gamma = 0.5, \
+                                xmin = -5, xmax = 0, ymin = -3, ymax = 2.5, \
+                                layerspervort = 2, npervortlayer = np.array([1, 5]),\
+                                centers_separation_factor = 1):
+    # Taylor Green Analogy
+    # We generate the vortices centers uniformly distributed over the flowfield 
+    dxyvort          = centers_separation_factor*2*vortex_radius #the vortex diameter is the spacing between vortices
+    cxvorts          = np.arange(xmin + vortex_radius, xmax - vortex_radius + dxyvort, dxyvort)
+    cyvorts          = np.arange(ymin + vortex_radius, ymax - vortex_radius + dxyvort, dxyvort)
+    cxv,cyv          = np.meshgrid(cxvorts, cyvorts, indexing = 'ij')
+    nvorts           = np.size(cxv)            
+    cvorts           = np.zeros([nvorts, 2])
+    cvorts[:,0]      = np.ravel(cxv)
+    cvorts[:,1]      = np.ravel(cyv)
+    gammas           = np.zeros_like(cxv)
+    # We assign the gammas alternatively over the flowfield
+    sign = 1
+    for j in range(len(cyvorts)): #filling the columns of gammas with gamma,-gamma sequences
+        gammas[np.arange(0,len(cxvorts), 2), j] =   sign*gamma # even rows
+        gammas[np.arange(1,len(cxvorts), 2), j] = - sign*gamma # odd rows
+        sign = -sign
+    gammapervort = np.ravel(gammas)
+    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortex_radius, layerspervort, npervortlayer, gammapervort)
+    return xyvorts, gammavorts
+
+
+def generate_flowfield_turbulence(vortex_radius = 0.2, vortex_density = 0.8, gamma = 0.5, \
+                                  xmin = -5, xmax = 0, ymin = -3, ymax = 2.5, \
+                                  layerspervort = 2, npervortlayer = np.array([1, 5]), overlap = False):
     # Free turbulence analogy: lots of free vortices in the flow field
-    ### --------------- INPUTS (to be modified) ---------------  ###
-    nvorts             = 140
-    layerspervort      = 2
-    npervortlayer      = 1*np.array([1, 5])
-    gamma              = 0.5 
+    domain_area        = (xmax-xmin)*(ymax-ymin)
+    vortex_area        = np.pi*vortex_radius**2
+    nvorts             = int(vortex_density*domain_area/vortex_area)
     gammapervort       = gamma*np.random.choice([-1,1], nvorts) #random number generation only among -1 and 1 values
-    vortradius         = 0.2
-    mindistanceBTvorts = 2*vortradius #critical distance is 2*vortradius
-    xmin, xmax         = -10, 0
-    ymin, ymax         = -1.5, 1.5
-    ### ------------------- END INPUTS ------------------  ###
+    mindistanceBTvorts = 2*vortex_radius #critical distance is 2*vortradius
     # Initial generation of vortex centres (it will change later)
     cvorts             = np.zeros([nvorts, 2])
     cvorts[:,0]        = np.random.uniform(xmin, xmax, nvorts) # xc
@@ -70,14 +113,20 @@ def generate_flowfield_turbulence():
     for n in range(1,nvorts):
         iwhile = 0
         distances = ((cvorts[:n,0] - cvorts[n,0])**2 + (cvorts[:n,1] - cvorts[n,1])**2)**0.5
-        while np.any(distances < mindistanceBTvorts) and iwhile < 15000: # Generate new vortex center satisfying the minimum distance wrt to the existing vortices centers
+        if not overlap:
+            while (np.any(distances < mindistanceBTvorts) and iwhile < 20000): # Generate new vortex center satisfying the minimum distance wrt to the existing vortices centers
+                cvorts[n,0]    = np.random.uniform(xmin, xmax, 1) # xc
+                cvorts[n,1]    = np.random.uniform(ymin, ymax, 1) # yc 
+                distances = ((cvorts[:n,0] - cvorts[n,0])**2 + (cvorts[:n,1] - cvorts[n,1])**2)**0.5
+                iwhile = iwhile + 1
+            if iwhile == 20000:
+                print('VortexError: Cannot locate more vortices with the actual radius and separation')
+        else: # generate new vortex allowing the overlapping with existing vortices
             cvorts[n,0]    = np.random.uniform(xmin, xmax, 1) # xc
             cvorts[n,1]    = np.random.uniform(ymin, ymax, 1) # yc 
             distances = ((cvorts[:n,0] - cvorts[n,0])**2 + (cvorts[:n,1] - cvorts[n,1])**2)**0.5
-            iwhile = iwhile + 1
-        if iwhile == 15000:
-            print('VortexError: Cannot locate more vortices with the actual radius and separation')
-    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
+
+    xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortex_radius, layerspervort, npervortlayer, gammapervort)
     return xyvorts, gammavorts
 
 class LUDVM():
@@ -194,7 +243,7 @@ class LUDVM():
         self.Uinf     = Uinf       # Freestream Velocity [m/s]l
         self.Npoints  = Npoints    # Number of airfoil nodes
         self.Ncoeffs  = Ncoeffs    # Number of coefficients in the Fourier expansion
-        self.piv      = 1/3*chord  # Pivot point for the pitching motion and for moment calculation
+        self.piv      = 0.25*chord # Pivot point for the pitching motion and for moment calculation
         self.LESPcrit = LESPcrit   # Critical Leading Edge Suction Parameter (LESP)
         self.maxerror = 1e-10      # Maximum error of the Newton Iteration Method (only for Ramesh method)
         self.maxiter  = 50         # Maximum number of iterations in the Newton Iteration Method (only for Ramesh method)
@@ -594,8 +643,8 @@ class LUDVM():
         # Initial condition (distribution of a flat plate at a fixed angle of attack alpha_m)
         # One can also load the A0, A1 initial coeffs for an specific airfoil at specific angle of attack (from another simulation)
         A0, A1 = np.sin(self.alpha_m), 0      
-        circulation_bound = Uinf*chord*pi*(A0 + A1/2)
-        self.fourier[0,0,:2] = A0, A1
+        circulation_bound = Uinf*chord*pi*(A0 + A1/2) 
+        self.fourier[0,0,:2] = A0, A1 
         # Initial Gamma to be accounted for in Kelvin's condition (this would be zero without free vortices and initial bound circulation)
         self.circulation['IC'] = np.sum(self.circulation['FREE']) + circulation_bound
 
@@ -1134,32 +1183,117 @@ class LUDVM():
 
         return None
 
-    def flowfield(self, xmin, xmax, zmin, zmax, dr):
+    def flowfield(self, xmin = -10, xmax = 0, zmin = -4, zmax = 4, dr = 0.02, tsteps = [0, 1, 2]):
+        # Computes induced velocity of the the vortices on a meshgrid defined by the domain (xmin, max, ymin, ymax)
+        # and the uniform spacing dx=dy=dr, in specified time steps of the simulation, defined
+        # by the tsteps vector.
+
+        nsteps = len(tsteps)
 
         x1, z1 = np.arange(xmin, xmax, dr), np.arange(zmin, zmax, dr)
         x , z  = np.meshgrid(x1, z1, indexing = 'ij')
         xp, zp = np.ravel(x), np.ravel(z)
-        u      = np.zeros([self.nt, np.shape(x)[0], np.shape(x)[1]])
-        w      = np.zeros([self.nt, np.shape(x)[0], np.shape(x)[1]])
+        u      = np.zeros([nsteps, np.shape(x)[0], np.shape(x)[1]])
+        w      = np.zeros([nsteps, np.shape(x)[0], np.shape(x)[1]])
 
-        for itev in range(self.nt-1):
-            print('Flowfield i =', itev)
-            ilev = int(self.LEV_shed[itev])
-            circulation_wake = np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1])
-            circulation_foil = self.circulation['airfoil'][itev,:]
-            xw = np.append(self.path['TEV'][itev+1,0,:itev+1], self.path['LEV'][itev+1,0,:ilev+1]) # x of wake vortices
-            zw = np.append(self.path['TEV'][itev+1,1,:itev+1], self.path['LEV'][itev+1,1,:ilev+1]) # y of wake vortices
-            xa = self.path['airfoil_gamma_points'][itev+1,0,:] # x of airfoil vortices
-            za = self.path['airfoil_gamma_points'][itev+1,1,:] # z of airfoil vortices
+        for ii in range(nsteps):
+            itev = tsteps[ii]
+            print('Flowfield tstep =', itev)
+            if itev == 0: # at the initial time step, only the free vortices are in the flowfield
+                circulation_wake = self.circulation['FREE']
+                xw = self.path['FREE'][itev,0,:] 
+                zw = self.path['FREE'][itev,1,:]
+                u_wake, w_wake = self.induced_velocity(circulation_wake, xw, zw, xp, zp)
+                u_foil, w_foil = 0, 0
+            else:
+                ilev = int(self.LEV_shed[itev])
+                circulation_wake = np.append(np.append(self.circulation['TEV'][:itev+1], self.circulation['LEV'][:ilev+1]), self.circulation['FREE'])
+                circulation_foil = self.circulation['airfoil'][itev-1,:]
+                xw = np.append(np.append(self.path['TEV'][itev-1,0,:itev+1], self.path['LEV'][itev-1,0,:ilev+1]), self.path['FREE'][itev,0,:]) # x of wake vortices
+                zw = np.append(np.append(self.path['TEV'][itev-1,1,:itev+1], self.path['LEV'][itev-1,1,:ilev+1]), self.path['FREE'][itev,1,:]) # y of wake vortices
+                xa = self.path['airfoil_gamma_points'][itev-1,0,:] # x of airfoil vortices
+                za = self.path['airfoil_gamma_points'][itev-1,1,:] # z of airfoil vortices
+                u_wake, w_wake = self.induced_velocity(circulation_wake, xw, zw, xp, zp)
+                u_foil, w_foil = self.induced_velocity(circulation_foil, xa, za, xp, zp)
 
-            u_wake, w_wake = self.induced_velocity(circulation_wake, xw, zw, xp, zp)
-            u_foil, w_foil = self.induced_velocity(circulation_foil, xa, za, xp, zp)
+            u[ii,:,:] = (u_wake + u_foil).reshape(np.shape(x))
+            w[ii,:,:] = (w_wake + w_foil).reshape(np.shape(x))
 
-            u[itev,:,:] = (u_wake + u_foil).reshape(np.shape(x))
-            w[itev,:,:] = (w_wake + w_foil).reshape(np.shape(x))
-
-        self.xff, self.zff = x, z
-        self.uff, self.wff = u, w
+        # Now we compute vorticity w = du/dz - dw/dx (stored in x,y points)
+        # dx, dz = dr, dr
+        ome    = np.zeros_like(u)
+        # Inner points (centered)
+        for i in range(1,np.shape(x)[0]-1):
+            for j in range(1,np.shape(x)[1]-1):
+                dx  = x[i+1,j  ] - x[i-1,j  ]
+                dz  = z[i  ,j+1] - z[i  ,j-1]
+                dw  = w[:,i+1,j  ] - w[:,i-1,j  ] 
+                du  = u[:,i  ,j+1] - u[:,i  ,j-1]
+                ome[:,i,j] = dw/dx - du/dz
+        # left boundary (forward in x, centered in z)
+        i = 0
+        for j in range(1,np.shape(x)[1]-1):
+            dx  = x[i+1,j  ] - x[i,j  ]
+            dz  = z[i  ,j+1] - z[i,j-1]
+            dw  = w[:,i+1,j  ] - w[:,i,j  ] 
+            du  = u[:,i  ,j+1] - u[:,i,j-1]
+            ome[:,i,j] = dw/dx - du/dz
+        #right boundary (backward in x, centered in z)
+        i = np.shape(x)[0]-1
+        for j in range(1,np.shape(x)[1]-1):
+            dx  = x[i,j  ] - x[i-1,j  ]
+            dz  = z[i,j+1] - z[i  ,j-1]
+            dw  = w[:,i,j  ] - w[:,i-1,j  ] 
+            du  = u[:,i,j+1] - u[:,i  ,j-1]
+            ome[:,i,j] = dw/dx - du/dz        
+        # bottom boundary (centered in x, forward in z)
+        j = 0
+        for i in range(1,np.shape(x)[0]-1):
+            dx  = x[i+1,j  ] - x[i-1,j]
+            dz  = z[i  ,j+1] - z[i  ,j]
+            dw  = w[:,i+1,j  ] - w[:,i-1,j]  
+            du  = u[:,i  ,j+1] - u[:,i  ,j]
+            ome[:,i,j] = dw/dx - du/dz
+        # top boundary (centered in x, backward in z)
+        j = np.shape(x)[1]-1
+        for i in range(1,np.shape(x)[0]-1):
+            dx  = x[i+1,j] - x[i-1,j  ]
+            dz  = z[i  ,j] - z[i  ,j-1]
+            dw  = w[:,i+1,j] - w[:,i-1,j  ] 
+            du  = u[:,i  ,j] - u[:,i  ,j-1]
+            ome[:,i,j] = dw/dx - du/dz  
+        # left-bottom corner: forward forward
+        i,j = 0,0
+        dx  = x[i+1,j  ] - x[i,j]
+        dz  = z[i  ,j+1] - z[i,j]
+        dw  = w[:,i+1,j  ] - w[:,i,j]
+        du  = u[:,i  ,j+1] - u[:,i,j]
+        ome[:,i,j] = dw/dx - du/dz
+        # right-bottom corner: backward forward
+        i,j = np.shape(x)[0]-1,0
+        dx  = x[i,j  ] - x[i-1,j]
+        dz  = z[i,j+1] - z[i  ,j]
+        dw  = w[:,i,j  ] - w[:,i-1,j] 
+        du  = u[:,i,j+1] - u[:,i  ,j]
+        ome[:,i,j] = dw/dx - du/dz     
+        # left-top corner: forward backward
+        i,j = 0,np.shape(x)[1]-1
+        dx  = x[i+1,j] - x[i,j  ]
+        dz  = z[i  ,j] - z[i,j-1]
+        dw  = w[:,i+1,j] - w[:,i,j  ] 
+        du  = u[:,i  ,j] - u[:,i,j-1]
+        ome[:,i,j] = dw/dx - du/dz
+        # right-top corner: backward backward
+        i,j = np.shape(x)[0]-1,np.shape(x)[1]-1
+        dx  = x[i,j] - x[i-1,j  ]
+        dz  = z[i,j] - z[i  ,j-1]
+        dw  = w[:,i,j] - w[:,i-1,j  ]
+        du  = u[:,i,j] - u[:,i  ,j-1]
+        ome[:,i,j] = dw/dx - du/dz            
+                
+        self.x_ff, self.z_ff = x, z
+        self.u_ff, self.w_ff = u, w
+        self.ome_ff = ome
 
         return None
 
@@ -1177,8 +1311,8 @@ class LUDVM():
         tev_indices = np.arange(0,self.nt-1,step)
         # lev_time_indices = np.arange(0,self.ilev,1)
 
-        xmin, xmax = -10, 2
-        ymin, ymax = -2, 2
+        xmin, xmax = self.path['airfoil'][-1,0,0], 2
+        ymin, ymax = -3, 3
         # xmin, xmax = 1.1*np.min(self.path['airfoil'][:,0,:]),1.1*np.max(self.path['airfoil'][:,0,:])
         # ymin, ymax = -5*abs(np.min(self.path['airfoil'][:,1,:])),5*abs(np.max(self.path['airfoil'][:,1,:]))
 
@@ -1237,30 +1371,38 @@ class LUDVM():
         self.etap = Ctm/Cpm        
         return None
 
-    
 if __name__ == "__main__":
 
     # Free vortices generation
     # nvorts         = 10
     # cvorts         = np.zeros([nvorts, 2])
-    # cvorts[:,0]    = np.linspace(-10, -1, nvorts)                      # xc
+    # cvorts[:,0]    = np.linspace(-5, -1, nvorts)                             # xc
     # cvorts[:,1]    = 0.5*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1]) - 0.5 # yc 
     # vortradius     = 0.3
-    # nlayerspervort = 4
+    # layerspervort  = 4
     # npervortlayer  = 1*np.array([1, 5, 10, 15])
-    # gammapervort   = 20*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1])
+    # gammapervort   = 5*np.array([-1, 1, -1, 1, -1, 1, -1, 1, -1, 1])
 
     # xyvorts, gammavorts = generate_free_vortices(nvorts, cvorts, vortradius, layerspervort, npervortlayer, gammapervort)
-
-    xyvorts, gammavorts = generate_flowfield_turbulence()
+    
+    # xyvorts, gammavorts = generate_free_single_vortex()
+    # xyvorts, gammavorts = generate_flowfield_turbulence(vortex_radius = 0.2, vortex_density = 0.55, gamma = 0.5, \
+    #                                                     xmin = -5, xmax = 0, ymin = -3, ymax = 2.5, \
+    #                                                     layerspervort = 2, npervortlayer = np.array([1, 5]))
+    # xmin, xmax = -10 , 3
+    # ymin, ymax = -3.5, 3 
+    # xyvorts, gammavorts = generate_flowfield_vortices(vortex_radius = 0.2, gamma = 1, \
+    #                                                   xmin = xmin, xmax = xmax, ymin = ymin-2, ymax = ymax+2, \
+    #                                                   layerspervort = 2, npervortlayer = np.array([1, 6]),\
+    #                                                   centers_separation_factor = 1.5)
 
     circulation_freevort, xy_freevort = None, None
-    circulation_freevort, xy_freevort = gammavorts, np.transpose(xyvorts)
+    # circulation_freevort, xy_freevort = gammavorts, np.transpose(xyvorts)
 
-    # fig = plt.figure(99)
-    # ax = fig.add_subplot(111)
-    # ax.plot(xyvorts[:,0], xyvorts[:,1], '.')
-    # ax.set_aspect('equal')
+    fig = plt.figure(99)
+    ax = fig.add_subplot(111)
+    ax.plot(xyvorts[:,0], xyvorts[:,1], '.')
+    ax.set_aspect('equal')
 
     # Optmimum pitching case
     # rho = 1.225
@@ -1298,23 +1440,24 @@ if __name__ == "__main__":
     Uinf = 1
     k = 0 
     T = 10
-    tfinal = 1*T
+    # tfinal = 3*T
     hmax = 0
     phi = 0
     alpha_max = 0
     NACA = '0012'
-    dt = 3.5e-2
+    dt = 1.5e-2
+    tfinal = 0.5*T
     alpham = 15 # 0 or 10
 
     self = LUDVM(t0=0, tf=tfinal, dt=dt, chord=chord, rho=rho, Uinf=Uinf, \
-         Npoints=80, Ncoeffs=30, LESPcrit=0.14, Naca = NACA, \
+         Npoints=80, Ncoeffs=30, LESPcrit=0.2, Naca = NACA, \
          alpha_m = alpham, alpha_max = alpha_max, k = k, phi = phi, h_max = hmax,
          verbose = True, method = 'Faure', \
          circulation_freevort = circulation_freevort, xy_freevort =  xy_freevort)
 
-    # # # self.propulsive_efficiency()
+    # # self.propulsive_efficiency()
 
-    self.animation(ani_interval=20)
+    # self.animation(ani_interval=20)
 
     # # # LESP with and without cutting
     # # plt.figure(1)
@@ -1334,15 +1477,38 @@ if __name__ == "__main__":
 
 
     # Flow field - time evolution
-    # xmin, xmax = -8, 2
-    # zmin, zmax = -8, 2
-    # dr = 0.1
-    # self.flowfield(xmin, xmax, zmin, zmax, dr)
-    # i = 350
+    # xmin, xmax = -30, 1
+    # xmin, xmax = -5.5, 1
+    # zmin, zmax = -3, 3
+    # dr = 0.02
+    # tsteps = [0, 332]
+    # self.flowfield(xmin, xmax, zmin, zmax, dr, tsteps = tsteps)
+
+
+    # ii = 1
     # plt.figure()
-    # plt.plot(self.path['airfoil'][i,0,:], self.path['airfoil'][i,1,:], 'k.', markersize=2)
-    # plt.contourf(self.xff, self.zff, self.uff[i,:,:], cmap = 'Spectral')
+    # # contourflevels = np.linspace(-5, 5, 40)
+    # contourflevels = np.linspace(-1, 1, 40)
+    # # contourflevels = 40
+    # plt.contourf(self.x_ff, self.z_ff, self.ome_ff[ii,:,:], cmap = 'jet', levels = contourflevels, extend = 'both')
+    # plt.colorbar()
+    # plt.title('Flow field | Vorticity $\omega$')
+    # plt.xlabel('$x$')
+    # plt.ylabel('$y$')
+
+    # plt.figure()
+    # contourflevels = np.linspace(-2, 2, 40)
+    # plt.contourf(self.x_ff, self.z_ff, self.u_ff[ii,:,:], cmap = 'jet', levels = contourflevels, extend = 'both')
     # plt.colorbar()
 
+    # plt.figure()
+    # plt.contourf(self.x_ff, self.z_ff, self.w_ff[ii,:,:], cmap = 'jet', levels = contourflevels, extend = 'both')
+    # plt.colorbar()
+    # plt.contour(self.x_ff, self.z_ff, self.ome_ff[ii,:,:], levels = 40, linewidths = 0.4, colors = 'k')
 
-    plt.show()
+
+    # plt.plot(self.path['airfoil'][i,0,:], self.path['airfoil'][i,1,:], 'k.', markersize=2)
+
+
+
+    # plt.show()
