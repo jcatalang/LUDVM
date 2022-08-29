@@ -6,7 +6,7 @@ Author: Juan Manuel Catalan Gomez. PhD Candidate in Unsteady Aerodynamics and CF
 
 Code to solve 2D unsteady airfoil flow problems: using unsteady thin-airfoil theory augmented with intermittent LEV model. Proposed by Kiran Ramesh and Ashok Gopalarathnam.
 
-LESP stands for Leading-edge Suction Parameter: $\text{LESP} (t) = A_0(t)$, defined as $ A_0(t) = - \frac{1}{\pi} \int_0^\pi \frac{W(x,t)}{U} \text{d}\theta$
+LESP stands for Leading-edge Suction Parameter: $\text{LESP} (t) = A_0(t)$, defined as $A_0(t) = - \frac{1}{\pi} \int_0^\pi \frac{W(x,t)}{U} \text{d}\theta$
 with $W(x,t)$ being the induced velocity normal to the aerofoil surface, computed from components of motion kinematics, $U$ being horizontal velocity of the airfoil, and $\theta$ being a variable of transformation related to the chordwise coordinate $x$. When reaching a critical value of the $\text{LESP}(t)$ such that $|\text{LESP}(t)| \geq \text{LESP}_{crit}$, which is an input of the code, the $\text{LESP}(t)$ is limited to such value and a Leading Edge Vortex (LEV) is shed at that time step.
 
 Check out **README.pdf** to see the math symbols displayed.
