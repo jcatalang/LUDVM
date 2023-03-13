@@ -1348,7 +1348,7 @@ class LUDVM():
                     init_func=init, blit=True, interval = ani_interval,repeat=False)
         plt.show()
 
-        return None
+        return ani
 
     def propulsive_efficiency(self, T=None):
         # Computes the propulsive efficiency per period
@@ -1457,7 +1457,7 @@ if __name__ == "__main__":
 
     # # self.propulsive_efficiency()
 
-    # self.animation(ani_interval=20)
+    # ani = self.animation(ani_interval=20)
 
     # # # LESP with and without cutting
     # # plt.figure(1)
